@@ -917,7 +917,7 @@ We are seeking an experienced professional...
           disabled={isLoading}
           className="px-9 h-13 w-1/2 md:w-70 xl:w-90 rounded-[9px] border border-[#0852C9] text-[#0852C9] font-semibold hover:bg-blue-50 transition disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          Back
+          Back and Preview
         </button>
         <button
           onClick={handleSubmit}

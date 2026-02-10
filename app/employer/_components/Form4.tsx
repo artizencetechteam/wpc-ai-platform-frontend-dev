@@ -279,7 +279,7 @@ const Form4 = ({ formData, setFormData, step, setStep }: FormType) => {
         </button>
 
         <div className="w-full sm:w-auto flex gap-2 sm:gap-3">
-          <button
+          {/* <button
             onClick={() => {
               setStep(step + 1)
             }}
@@ -291,7 +291,7 @@ const Form4 = ({ formData, setFormData, step, setStep }: FormType) => {
             </svg>
             <span className="hidden sm:inline">Preview</span>
             <span className="inline sm:hidden">View</span>
-          </button>
+          </button> */}
 
           <button
             onClick={() => {
@@ -299,7 +299,7 @@ const Form4 = ({ formData, setFormData, step, setStep }: FormType) => {
             }}
             className="px-4 sm:px-9 h-13 flex-1 sm:w-auto md:w-70 xl:w-90 rounded-[9px] bg-[#0852C9] text-sm sm:text-[16px] text-[#FFFFFF] font-semibold hover:bg-[#0852C9]/90 transition disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            Publish
+           Preview and Publish
           </button>
         </div>
       </div>
