@@ -338,7 +338,7 @@ const ReviewPage = ({ formData, setFormData, step, setStep }: FormType) => {
                       disabled={!localFormData.job_title?.id}
                       className="px-4 py-1 bg-[#0852C9] text-white text-sm rounded hover:bg-[#0852C9]/90 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
-                      Save
+                      Save and Publish
                     </button>
                     <button
                       onClick={handleCancel}
