@@ -55,6 +55,11 @@ const Employer = () => {
           How it work
         </button>
 
+           <button className="bg-white text-[#0852C9] border border-[#0852C9] rounded-lg font-semibold py-2.5 px-7 text-[13px]" onClick={()=>{
+          router.push("/")
+        }}>
+          Back
+        </button>
         <button className="bg-[#0852C9] hover:bg-[#0852C9]/90 text-white rounded-lg font-semibold py-2.5 px-7 text-[13px]" onClick={()=>{
           router.push("/auth/candidate/login")
         }}>

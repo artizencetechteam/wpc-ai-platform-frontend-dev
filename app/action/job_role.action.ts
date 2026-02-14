@@ -681,3 +681,232 @@ export async function CreateInterview(data: Interview) {
     };
   }
 }
+
+
+// employer aciton for the getting the interviews
+export interface EmployerInterview {
+  id: number;
+  candidate_email: string;
+  role_title: string;
+  employer_email: string;
+  time_slot_1: string;
+  time_slot_2: string;
+  time_slot_3: string;
+  terms_and_conditions: boolean;
+  created_at: string;
+  updated_at: string;
+  joining_link: string;
+  mode: string;
+  status: 'pending' | 'confirmed' | 'rejected' | 'completed' | 'cancelled';
+  candidate: number;
+  role: number;
+  employer: number;
+}
+
+export interface GetEmployerInterviewsResponse {
+  success: boolean;
+  message: string;
+  data?: EmployerInterview[];
+  count?: number;
+}
+
+// Action to get employer interviews
+export async function get_employer_interviews(): Promise<GetEmployerInterviewsResponse> {
+  try {
+    const res = await clientApi.get<{ count: number; results: EmployerInterview[] }>('api/employer/interviews/');
+    
+    if (res.status === 200 || res.status === 201) {
+      return {
+        success: true,
+        message: "Interviews fetched successfully",
+        data: res.data.results,
+        count: res.data.count
+      };
+    }
+    
+    return {
+      success: false,
+      message: "Failed to get interviews"
+    };
+    
+  } catch (error: any) {
+    // Unauthorized error
+    if (error.response?.status === 401) {
+      return {
+        success: false,
+        message: error.response?.data?.detail || "Authentication required"
+      };
+    }
+    
+    // Generic error
+    return {
+      success: false,
+      message: error.response?.data?.detail || "Failed to get interviews"
+    };
+  }
+}
+
+// Add this to your job_role.action.ts file
+interface RescheduleData {
+  time_slot_1?: string;
+  time_slot_2?: string;
+  time_slot_3?: string;
+}
+
+interface RescheduleResponse {
+  success: boolean;
+  message: string;
+  data?: any;
+}
+
+/**
+ * Reschedule an interview with new time slots
+ * @param interview_id - The ID of the interview to reschedule
+ * @param timeSlots - Object containing up to 3 new time slots
+ * @returns Promise with success status and message
+ */
+export async function rescheduleInterview(
+  interview_id: number,
+  timeSlots: RescheduleData
+): Promise<RescheduleResponse> {
+  try {
+    const res = await clientApi.patch(
+      `api/employer/interviews/${interview_id}/`,
+      timeSlots
+    );
+
+    console.log('Reschedule Success:', res);
+
+    return {
+      success: true,
+      message: "Interview schedule updated successfully",
+      data: res.data
+    };
+  } catch (error: any) {
+    console.error("Reschedule error:", error);
+    
+    // Handle specific API error responses
+    if (error.response?.status === 404) {
+      return {
+        success: false,
+        message: "Interview schedule not found"
+      };
+    }
+
+    if (error.response?.data?.detail === "Interview schedule not found") {
+      return {
+        success: false,
+        message: "Interview schedule not found"
+      };
+    }
+
+    // Handle other errors
+    const errorMessage = 
+      error.response?.data?.message || 
+      error.response?.data?.detail || 
+      error.message ||
+      "Failed to reschedule the interview";
+
+    return {
+      success: false,
+      message: errorMessage
+    };
+  }
+}
+
+// delete interview 
+export async function delete_interview(id: number){
+  try {
+    const res = await clientApi.delete(`api/employer/interviews/${id}/`);
+    if (res.status != 200 && res.status != 201 && res.status != 204) {
+      return {success: false, message: "Failed to delete the interview"}
+    }
+    return {success: true, message: "Interview Deleted"}
+  } catch (error) {
+    console.log(error);
+    return {success: false, message: "Failed to delete"}
+  }
+}
+
+
+// TypeScript Interface for Offer
+export interface Offer {
+  id: number;
+  candidate: number;
+  candidate_email: string;
+  role: number;
+  role_title: string;
+  employer: number;
+  employer_email: string;
+  job_title: number;
+  job_title_name: string;
+  proposed_start_date: string;
+  additional_note: string;
+  company_name: string | null;
+  status: 'pending' | 'accepted' | 'rejected' | 'withdrawn';
+  created_at: string;
+  updated_at: string;
+}
+
+// Response type for get_offers
+interface GetOffersResponse {
+  success: boolean;
+  message: string;
+  data?: {
+    count: number;
+    data: Offer[];
+  };
+}
+
+// get offers
+export async function get_offers(): Promise<GetOffersResponse> {
+  try {
+    const res = await clientApi.get(`api/employer/job/offer`);
+    if (res.status !== 200 && res.status !== 201 && res.status !== 204) {
+      return {
+        success: false, 
+        message: "Failed to fetch offers"
+      };
+    }
+    
+    return {
+      success: true,
+      data: res.data,
+      message: "Offers fetched successfully"
+    };
+  } catch (error: any) {
+    console.error("Get offers error:", error);
+    if (error.response?.status === 404) {
+      return {
+        success: false,
+        message: "No offers found"
+      };
+    }
+    
+    if (error.response?.status === 401) {
+      return {
+        success: false,
+        message: "Unauthorized. Please login again"
+      };
+    }
+    
+    if (error.response?.status === 403) {
+      return {
+        success: false,
+        message: "You don't have permission to view offers"
+      };
+    }
+    
+    // in gen msg
+    const errorMessage = 
+      error.response?.data?.message || 
+      error.response?.data?.detail || 
+      error.message ||
+      "Failed to get the offers";
+    
+    return {
+      success: false,
+      message: errorMessage
+    };
+  }
+}

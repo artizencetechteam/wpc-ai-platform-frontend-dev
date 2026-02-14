@@ -244,3 +244,127 @@ export async function update_passport(cvFile: File) {
     };
   }
 }
+
+
+
+// Type definitions
+export interface Interview {
+  id: number;
+  candidate_email: string;
+  role_title: string;
+  employer_email: string;
+  time_slot_1: string;
+  time_slot_2: string;
+  time_slot_3: string;
+  terms_and_conditions: boolean;
+  created_at: string;
+  updated_at: string;
+  joining_link: string;
+  mode: string;
+  status: 'pending' | 'confirmed' | 'rejected' | 'completed' | 'cancelled';
+  candidate: number;
+  role: number;
+  employer: number;
+}
+
+export interface GetInterviewsResponse {
+  success: boolean;
+  message: string;
+  data?: Interview[];
+}
+
+// Simple action to get candidate interviews
+export async function get_candidate_interviews(): Promise<GetInterviewsResponse> {
+  try {
+    const res = await clientApi.get<Interview[]>('api/candidate/interview/');
+    
+    if (res.status === 200 || res.status === 201) {
+      return {
+        success: true,
+        message: "Interviews fetched successfully",
+        data: res.data
+      };
+    }
+    
+    return {
+      success: false,
+      message: "Failed to get interviews"
+    };
+    
+  } catch (error: any) {
+    // Unauthorized error
+    if (error.response?.status === 401) {
+      return {
+        success: false,
+        message: error.response?.data?.detail || "Authentication required"
+      };
+    }
+    
+    // Generic error
+    return {
+      success: false,
+      message: error.response?.data?.detail || "Failed to get interviews"
+    };
+  }
+}
+
+
+// Type definitions
+export interface JobOffer {
+  id: number;
+  candidate: number;
+  candidate_email: string;
+  role: number;
+  role_title: string;
+  employer: number;
+  employer_email: string;
+  job_title: number;
+  job_title_name: string;
+  proposed_start_date: string;
+  additional_note: string;
+  company_name: string | null;
+  status: 'pending' | 'accepted' | 'rejected';
+  created_at: string;
+  updated_at: string;
+}
+
+export interface GetOffersResponse {
+  success: boolean;
+  message: string;
+  data?: JobOffer[];
+}
+
+// Simple action to get candidate offers
+export async function candidate_offers(): Promise<GetOffersResponse> {
+  try {
+    const res = await clientApi.get<JobOffer[]>('api/candidate/offer/');
+    
+    if (res.status === 200 || res.status === 201) {
+      return {
+        success: true,
+        message: "Offers fetched successfully",
+        data: res.data
+      };
+    }
+    
+    return {
+      success: false,
+      message: "Failed to get offers"
+    };
+    
+  } catch (error: any) {
+    // Unauthorized error
+    if (error.response?.status === 401) {
+      return {
+        success: false,
+        message: error.response?.data?.detail || "Authentication required"
+      };
+    }
+    
+    // Generic error
+    return {
+      success: false,
+      message: error.response?.data?.detail || "Failed to get offers"
+    };
+  }
+}

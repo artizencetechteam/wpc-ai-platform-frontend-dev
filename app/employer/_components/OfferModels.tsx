@@ -331,7 +331,7 @@ const OfferModals = ({ isOpen, onClose, candidateName = "Alexandra Thompson", ca
                 <div className="flex justify-between items-start">
                   <span className="text-[14px] text-[#000000C4]">Position</span>
                   <span className="text-[15px] font-semibold text-[#000000E0] text-right">
-                    {formData.position}
+                    {jrt ? jrt.name : "Select a position"}
                   </span>
                 </div>
 

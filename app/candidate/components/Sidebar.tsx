@@ -23,7 +23,7 @@ const Sidebar = () => {
     { id: 2, name: 'My Profile', route: '/candidate/dashboard/my-profile', icon: Users },
     { id: 3, name: 'Interview', route: '/candidate/dashboard/interview', icon: VideoIcon },
     { id: 4, name: 'Offers', route: '/candidate/dashboard/offers', icon: UserCheck },
-    { id: 5, name: 'Applications', route: '/candidate/dashboard/applications', icon: CreditCard },
+    // { id: 5, name: 'Applications', route: '/candidate/dashboard/applications', icon: CreditCard },
     { id: 6, name: 'Support', route: '/candidate/dashboard/support', icon: BsQuestionCircle },
   ];
 
