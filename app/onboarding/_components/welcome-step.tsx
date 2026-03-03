@@ -4,7 +4,7 @@ import React, { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { MapPin, XCircle } from 'lucide-react';
 import { useOnboardingStore } from '@/app/store/onboardingStore';
-import uk_cities from '@/config/uk_cities';
+
 
 interface BasicInfoForm {
   uk_postcode: string;
