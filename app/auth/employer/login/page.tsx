@@ -31,12 +31,10 @@ const LoginPage = () => {
         password: formData.password,
       });
       console.log("LOGIN RESULT:", result);
-      
+
 
       if (result.success) {
-       
-        router.push('/employer/dashboard');
-        router.refresh();
+        window.location.href = '/employer/dashboard';
       } else {
         setErrorMessage(result.message);
       }
@@ -146,10 +144,10 @@ const LoginPage = () => {
             <Link href="/auth/employer/register" className="text-blue-600 hover:underline font-medium">
               Create Account
             </Link>
-            
+
           </div>
         </form>
-       
+
       </div>
     </div>
   );

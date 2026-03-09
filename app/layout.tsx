@@ -1,15 +1,12 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono, Inter } from "next/font/google";
-// @ts-ignore
+import { Inter } from "next/font/google";
 import "./globals.css";
 import { Toaster } from "react-hot-toast";
-import { AuthProvider } from "@/context/AuthContext";
-import { PasswordResetProvider, VerificationProvider } from "@/context/VerificationContext";
 
 const inter = Inter({
   variable: "--font-inter",
   subsets: ["latin"],
-  weight: ["400","600","700"],
+  weight: ["400", "600", "700"],
 });
 
 export const metadata: Metadata = {
@@ -24,16 +21,8 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body
-        className={`${inter.variable} antialiased`}
-      >
-       <AuthProvider>
-         
-         <VerificationProvider>
-           {children}
-         </VerificationProvider>
-  
-       </AuthProvider>
+      <body className={inter.variable}>
+        {children}
         <Toaster position="top-right" />
       </body>
     </html>

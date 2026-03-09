@@ -43,20 +43,15 @@ const extractRefreshToken = (data: any): string | null =>
   data?.refresh ?? data?.refresh_token ?? data?.refreshToken ?? null;
 
 const extractUser = (data: any) => {
-
-  const u =
-    data?.user?.user ??  
-    data?.user ??
-    data?.data ??
-    data;
-
+  const u = data?.user?.user ?? data?.user ?? data?.data ?? data;
   return {
-    id: u?.id ?? data?.user_id ?? null,
-    email: u?.email ?? "",
-    role: "employer",
-    onboarding: u?.onboarding_state ?? false,
+    id:         u?.id ?? data?.user_id ?? null,
+    email:      u?.email ?? "",
+    role:       u?.role ?? u?.user_type ?? u?.account_type ?? "employer", // ✅ API se
+    onboarding: u?.onboarding_state ?? u?.onboarding ?? false,
   };
 };
+
 
 
 

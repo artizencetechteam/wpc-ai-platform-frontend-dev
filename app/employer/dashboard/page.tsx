@@ -19,6 +19,7 @@ import { getClientToken } from '@/lib/getClientToken';
 
 
 
+
 const StatCard = ({
   title, count, badge, badgeColor, loading,
 }: {
@@ -102,6 +103,20 @@ export default function EmployerDashboard() {
     { icon: <CheckCircle size={16} className="text-[#22C55E]" />, text: 'HR validation approved', time: '2 hours ago' },
     { icon: <ClipboardList size={16} className="text-[#0852C9]" />, text: 'New compliance task assigned', time: '3 hours ago' },
   ];
+
+  useEffect(() => {
+  const token = document.cookie
+    .split('; ')
+    .find(row => row.startsWith('access-token='))
+    ?.split('=')[1];
+
+  if (!token || token.length < 10) {
+    window.location.href = '/welcome';
+    return;
+  }
+
+  fetchStats();
+}, []);
 
  
 

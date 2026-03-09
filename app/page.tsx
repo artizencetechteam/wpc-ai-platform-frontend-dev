@@ -2,6 +2,8 @@
 
 // import { useEffect } from 'react';
 // import { useRouter } from 'next/navigation';
+import { redirect } from "next/navigation";
+
 
 // function getCookie(name: string) {
 //   const match = document.cookie
@@ -35,17 +37,6 @@
 
 
 // app/page.tsx
-export default function Page() {
-  return (
-    <div style={{ 
-      display: 'flex', 
-      justifyContent: 'center', 
-      alignItems: 'center', 
-      height: '100vh',
-      fontSize: '16px',
-      color: '#666'
-    }}>
-      Loading... 
-    </div>
-  );
+export default function Home() {
+  redirect("/welcome/employer");
 }
