@@ -62,7 +62,7 @@ const HowitWorks = ({ setIsIntro }) => {
                 <Logo className="object-contain h-40 w-48.75 mb-2" fontSize={20} />
                 <div className="flex flex-col gap-2 font-inter py-2 border-b-2 border-[#C8CED5]">
                     <h1 className="text-[20px] lg:text-[22px] xl:text-[26px] 2xl:text-[30px] font-semibold">
-                        How does WPC Jobs work?
+                        How does WPC AI work?
                     </h1>
 
                     <div className="flex flex-col items-center justify-center gap-3 mt-4">

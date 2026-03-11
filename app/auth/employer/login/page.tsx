@@ -51,12 +51,12 @@ const LoginPage = () => {
         <div className="flex flex-col items-center justify-center mb-4 md:mb-6">
           <Image
             src="/logo/main.png"
-            alt="WPC Jobs Logo"
+            alt="WPC AI Logo"
             width={180}
             height={60}
             className="object-contain h-14 sm:h-16 md:h-20 w-auto"
           />
-          <span className='text-[#002B92] font-bold text-sm md:text-base'>WPC JOBS</span>
+          <span className='text-[#002B92] font-bold text-sm md:text-base'>WPC AI</span>
         </div>
 
         <div className="text-center mb-6 md:mb-8">
