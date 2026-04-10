@@ -74,6 +74,12 @@ type TopNavProps = {
 };
 
 function TopNav({ onBack, onTabClick }: TopNavProps) {
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
   return (
     <div style={{ backgroundColor: "white", borderBottom: "1px solid #E2E8F0", padding: "0 28px" }}>
       <div style={{ display: "flex", alignItems: "center", gap: "10px", paddingTop: "16px", paddingBottom: "2px" }}>
@@ -90,7 +96,7 @@ function TopNav({ onBack, onTabClick }: TopNavProps) {
       <div style={{ display: "flex", gap: "6px", marginTop: "10px", paddingBottom: "12px", overflowX: "auto" }}>
         {tabs.map((tab) => {
           const isActive = tab.id === "pension";
-          const unlocked = isTabUnlocked(tab.id);
+          const unlocked = mounted ? isTabUnlocked(tab.id) : (tab.id === "staff" || tab.id === "rtw" || tab.id === "pension");
           return (
             <button key={tab.id} onClick={() => onTabClick(tab.id)} style={{
               padding: "6px 16px", borderRadius: "20px",
@@ -292,23 +298,19 @@ function EmployeeEligibilityStep({
   onComplete,
 }: EmployeeEligibilityStepProps) {
 
-  const [checks, setChecks] = useState<Record<number, any>>(() =>
-    Object.fromEntries(
-      employees.map((e) => [
-        e.id,
-        { age22: false, earnings10k: false, autoEnrolled: false, optedOut: false },
-      ])
-    )
-  );
+  const [checks, setChecks] = useState<Record<number, any>>({});
 
  const toggle = (empId: number, field: string) => {
-  setChecks((prev) => ({
-    ...prev,
-    [empId]: {
-      ...prev[empId],
-      [field]: !prev[empId][field],
-    },
-  }));
+  setChecks((prev) => {
+    const current = prev[empId] || { age22: false, earnings10k: false, autoEnrolled: false, optedOut: false };
+    return {
+      ...prev,
+      [empId]: {
+        ...current,
+        [field]: !current[field],
+      },
+    };
+  });
 };
 
  const getStatus = (c: any) => {
