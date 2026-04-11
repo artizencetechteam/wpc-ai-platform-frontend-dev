@@ -133,11 +133,11 @@ const LoginPage = () => {
             ) : 'Secure Login'}
           </button>
 
-          <div className="flex items-center justify-between text-xs md:text-sm">
+          {/* <div className="flex items-center justify-between text-xs md:text-sm">
             <Link href="/welcome/forgot-password" className="text-blue-600 hover:underline">
               Forgot Password?
             </Link>
-          </div>
+          </div> */}
 
           <div className="text-center text-xs md:text-sm text-gray-600">
             Don't have an account?{' '}

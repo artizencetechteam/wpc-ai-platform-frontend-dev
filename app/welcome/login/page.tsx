@@ -112,7 +112,7 @@ export default function Login() {
                     Continue With Google
                 </button>
 
-                <div className="flex justify-between text-[15px] lg:text-[18px] text-[#0852C9] font-inter font-medium mt-1">
+                {/* <div className="flex justify-between text-[15px] lg:text-[18px] text-[#0852C9] font-inter font-medium mt-1">
                     <button
                         type="button"
                         className="hover:underline"
@@ -122,7 +122,7 @@ export default function Login() {
                     >
                         Forgot Password?
                     </button>
-                </div>
+                </div> */}
 
                 <p className="text-center text-[15px] lg:text-[18px] text-[#1E1D1D] mt-1 border-t-2 border-[#8A8A8A]/90 pt-2">
                     Don{"'"}t have an account?{" "}
