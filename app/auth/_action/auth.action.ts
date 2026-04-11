@@ -104,7 +104,7 @@ const setCookies = async (data: any) => {
 
 const getFirstError = (errorData: any): string => {
   const fields = [
-    "email", "password", "password1", "password2", "name",
+    "error", "errors", "email", "password", "password1", "password2", "name",
     "role", "non_field_errors", "detail", "message",
   ];
   for (const field of fields) {
@@ -114,6 +114,17 @@ const getFirstError = (errorData: any): string => {
     }
   }
   if (typeof errorData === "string") return errorData;
+  
+  if (errorData && typeof errorData === "object") {
+    const keys = Object.keys(errorData);
+    if (keys.length > 0) {
+      const firstVal = errorData[keys[0]];
+      const error = Array.isArray(firstVal) ? firstVal[0] : firstVal;
+      return typeof error === "string" ? error : JSON.stringify(error);
+    }
+    return JSON.stringify(errorData);
+  }
+  
   return "An error occurred. Please try again.";
 };
 

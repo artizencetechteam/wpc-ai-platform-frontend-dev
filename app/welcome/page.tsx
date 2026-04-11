@@ -1,10 +1,5 @@
-import React from "react";
-import Employer from "@/app/welcome/employer/page";
+import { redirect } from "next/navigation";
 
 export default function Page() {
-  return (
-    <div>
-      <Employer />
-    </div>
-  );
+  redirect("/auth/employer/login");
 }
