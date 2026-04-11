@@ -1,42 +1,25 @@
-// 'use client';
-
-// import { useEffect } from 'react';
-// import { useRouter } from 'next/navigation';
+import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 
+export default async function Home() {
+  const cookieStore = await cookies();
+  const accessToken = cookieStore.get("access-token")?.value;
+  const userInfoCookie = cookieStore.get("user-info")?.value;
 
-// function getCookie(name: string) {
-//   const match = document.cookie
-//     .split('; ')
-//     .find(row => row.startsWith(name + '='));
-//   return match ? decodeURIComponent(match.split('=')[1]) : null;
-// }
+  if (accessToken) {
+    let dashboardPath = "/employer/dashboard";
+    if (userInfoCookie) {
+      try {
+        const userInfo = JSON.parse(decodeURIComponent(userInfoCookie));
+        if (userInfo.role) {
+          dashboardPath = `/${userInfo.role}/dashboard`;
+        }
+      } catch (e) {
+        console.error("Home: Error parsing user-info cookie", e);
+      }
+    }
+    redirect(dashboardPath);
+  }
 
-// export default function Page() {
-//   const router = useRouter();
-
-//   useEffect(() => {
-//     const accessToken = getCookie('access-token');
-//     const userInfoCookie = getCookie('user-info');
-
-//     if (!accessToken || !userInfoCookie) {
-//       router.replace('/welcome');
-//       return;
-//     }
-
-//     try {
-//       const userInfo = JSON.parse(userInfoCookie);
-//       router.replace(`/${userInfo.role}/dashboard`);
-//     } catch (err) {
-//       router.replace('/welcome');
-//     }
-//   }, [router]);
-
-//   return null;
-// }
-
-
-// app/page.tsx
-export default function Home() {
   redirect("/auth/employer/login");
 }

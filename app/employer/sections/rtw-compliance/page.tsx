@@ -1,10 +1,22 @@
 'use client';
 
-import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useState, useEffect, Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import HRValidationTabs from "../_components/HRValidationTabs";
+import { listHRValidationRecordsAction, listEmployeesAction } from "@/app/employer/sections/action/action";
+
+function getClientToken(): string {
+  if (typeof document === "undefined") return "";
+  const match = document.cookie
+    .split("; ")
+    .find((row) => row.startsWith("access-token="));
+  if (!match) return "";
+  const raw = decodeURIComponent(match.split("=").slice(1).join("="));
+  return raw.replace(/\s+/g, "").replace(/^(Bearer|Token)\s*/i, "");
+}
 
 // --- Types ---
-type TabId = "staff" | "rtw" | "pension" | "auth" | "contracts" | "financial" | "summary";
+type TabId = "company" | "staff" | "rtw" | "pension" | "auth" | "contracts" | "financial" | "summary";
 
 type Employee = {
   id: string;
@@ -14,17 +26,6 @@ type Employee = {
   documentNumber?: string;
   startDate?: string;
 };
-
-// --- Tabs ---
-const tabs: { label: string; id: TabId }[] = [
-  { label: "Staff List", id: "staff" },
-  { label: "1. RTW Compliance", id: "rtw" },
-  { label: "2. Pension", id: "pension" },
-  { label: "3. Authorising Officer", id: "auth" },
-  { label: "4. Contracts", id: "contracts" },
-  { label: "5. Financial", id: "financial" },
-  { label: "6. Summary", id: "summary" },
-];
 
 // --- Icons ---
 const GreenCheckCircle = () => (
@@ -41,6 +42,14 @@ const AlertTriangleIcon = () => (
   </svg>
 );
 
+const SpinnerIcon = ({ color = "#0852C9" }: { color?: string }) => (
+  <svg width="20" height="20" viewBox="0 0 20 20" fill="none" style={{ animation: "spin 1s linear infinite" }}>
+    <circle cx="10" cy="10" r="8" stroke="#CBD5E1" strokeWidth="2.5" />
+    <path d="M10 2a8 8 0 018 8" stroke={color} strokeWidth="2.5" strokeLinecap="round" />
+    <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
+  </svg>
+);
+
 // --- Helpers ---
 function formatDate(dateStr?: string): string | null {
   if (!dateStr) return null;
@@ -54,51 +63,6 @@ function formatDate(dateStr?: string): string | null {
 
 function getInitial(name?: string): string {
   return (name || "?").trim()[0].toUpperCase();
-}
-
-// --- TopNav Component ---
-function TopNav({ activeTabId, onBack, onTabClick, isTabUnlocked }: {
-  activeTabId: TabId;
-  onBack: () => void;
-  onTabClick: (tabId: TabId) => void;
-  isTabUnlocked: (tabId: TabId) => boolean;
-}) {
-  return (
-    <div style={{ backgroundColor: "white", borderBottom: "1px solid #E2E8F0", padding: "0 28px" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: "10px", paddingTop: "16px", paddingBottom: "2px" }}>
-        <button onClick={onBack} style={{ background: "none", border: "none", cursor: "pointer", padding: "4px", display: "flex", alignItems: "center" }}>
-          <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
-            <path d="M13 15L8 10L13 5" stroke="#374151" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-        </button>
-        <div>
-          <h1 style={{ margin: 0, fontSize: "18px", fontWeight: "700", color: "#0F172A" }}>HR Records Validation</h1>
-          <div style={{ fontSize: "11.5px", color: "#94A3B8", marginTop: "1px" }}>V.03</div>
-        </div>
-      </div>
-      <div style={{ display: "flex", gap: "6px", marginTop: "10px", paddingBottom: "12px", overflowX: "auto" }}>
-        {tabs.map((tab) => {
-          const isActive = tab.id === activeTabId;
-          const unlocked = isTabUnlocked(tab.id);
-          return (
-            <button key={tab.id} onClick={() => onTabClick(tab.id)} style={{
-              padding: "6px 16px",
-              borderRadius: "20px",
-              border: isActive ? "none" : "1.5px solid #D1D5DB",
-              cursor: unlocked && !isActive ? "pointer" : "default",
-              fontSize: "13px",
-              fontWeight: isActive ? "600" : "400",
-              color: isActive ? "white" : "#374151",
-              backgroundColor: isActive ? "#0852C9" : "white",
-              whiteSpace: "nowrap",
-              transition: "all 0.15s",
-              boxShadow: isActive ? "none" : "0 1px 2px rgba(0,0,0,0.04)",
-            }}>{tab.label}</button>
-          );
-        })}
-      </div>
-    </div>
-  );
 }
 
 // --- NoMigrantScreen ---
@@ -128,7 +92,7 @@ function NoMigrantScreen({ onContinue }: { onContinue: () => void }) {
 }
 
 // --- RTWVerificationScreen ---
-function RTWVerificationScreen({ migrants, onBackToStaffList }: { migrants: Employee[], onBackToStaffList: () => void }) {
+function RTWVerificationScreen({ migrants, onBackToStaffList, onContinue }: { migrants: Employee[], onBackToStaffList: () => void, onContinue: () => void }) {
   const [currentIndex, setCurrentIndex] = useState(0);
   const employee = migrants[currentIndex];
   const hasDocument = !!(employee?.documentType || employee?.documentNumber);
@@ -224,85 +188,116 @@ function RTWVerificationScreen({ migrants, onBackToStaffList }: { migrants: Empl
           fontSize: "14px", fontWeight: "500", cursor: "pointer",
         }}>Back to Staff List</button>
 
-        {migrants.length > 1 && <div style={{ display: "flex", gap: "10px" }}>
+        <div style={{ display: "flex", gap: "10px" }}>
           {currentIndex > 0 && <button onClick={() => setCurrentIndex(currentIndex - 1)} style={{
             padding: "10px 18px", backgroundColor: "white", color: "#475569",
             border: "1.5px solid #E2E8F0", borderRadius: "8px",
             fontSize: "13.5px", fontWeight: "500", cursor: "pointer",
           }}>← Previous</button>}
-          {currentIndex < migrants.length - 1 && <button onClick={() => setCurrentIndex(currentIndex + 1)} style={{
-            padding: "10px 18px", backgroundColor: "#0852C9", color: "white",
-            border: "none", borderRadius: "8px",
-            fontSize: "13.5px", fontWeight: "600", cursor: "pointer",
-          }}>Next Employee →</button>}
-        </div>}
+          {currentIndex < migrants.length - 1 ? (
+            <button onClick={() => setCurrentIndex(currentIndex + 1)} style={{
+              padding: "10px 18px", backgroundColor: "#0852C9", color: "white",
+              border: "none", borderRadius: "8px",
+              fontSize: "13.5px", fontWeight: "600", cursor: "pointer",
+            }}>Next Employee →</button>
+          ) : (
+            <button onClick={onContinue} style={{
+              padding: "10px 18px", backgroundColor: "#0852C9", color: "white",
+              border: "none", borderRadius: "8px",
+              fontSize: "13.5px", fontWeight: "600", cursor: "pointer",
+            }}>Continue to Pension Compliance</button>
+          )}
+        </div>
       </div>
     </div>
   );
 }
 
-// --- Main Component ---
 export default function RTWCompliance() {
+  return (
+    <Suspense fallback={<div style={{ display: "flex", justifyContent: "center", padding: "100px" }}><SpinnerIcon /></div>}>
+      <RTWComplianceImpl />
+    </Suspense>
+  );
+}
+
+function RTWComplianceImpl() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [employees, setEmployees] = useState<Employee[]>([]);
+  const [recordId, setRecordId] = useState<number | null>(null);
   const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
-    try {
-      const saved = sessionStorage.getItem("hr_employees");
-      if (saved) setEmployees(JSON.parse(saved));
-    } catch {}
-    setLoaded(true);
-  }, []);
+    async function loadData() {
+      let dataLoaded = false;
+      try {
+        const token = getClientToken();
+        if (token) {
+          const queryId = searchParams.get("recordId") || searchParams.get("id");
+          let id = queryId || sessionStorage.getItem("current_hr_record_id");
+          
+          if (!id) {
+            const hrRes = await listHRValidationRecordsAction(token);
+            if (hrRes.success && hrRes.data && hrRes.data.length > 0) {
+              const sorted = [...hrRes.data].sort((a, b) => b.id - a.id);
+              id = String(sorted[0].id);
+              sessionStorage.setItem("current_hr_record_id", id);
+            }
+          }
+          const numId = id ? Number(id) : null;
+          setRecordId(numId);
 
-  const migrants = employees.filter((e) => e.nationality === "Migrant");
+          if (numId) {
+            const empRes = await listEmployeesAction(numId, token);
+            if (empRes.success && empRes.data) {
+              const mapped = empRes.data.map((e: any) => ({
+                id: String(e.id),
+                name: e.employee_full_name,
+                nationality: e.nationality || "Migrant",
+                documentType: e.rtw_document_url ? "Uploaded Document" : "",
+                documentNumber: e.rtw_document_url ? e.rtw_document_url : "",
+                startDate: e.employment_start_date
+              }));
+              setEmployees(mapped);
+              sessionStorage.setItem("hr_employees", JSON.stringify(mapped));
+              dataLoaded = true;
+            }
+          }
+        }
+      } catch (err) {
+        console.error("Error fetching RTW employees via API", err);
+      }
+      
+      if (!dataLoaded) {
+        try {
+          const saved = sessionStorage.getItem("hr_employees");
+          if (saved) setEmployees(JSON.parse(saved));
+        } catch {}
+      }
+      setLoaded(true);
+    }
+    loadData();
+  }, [searchParams]);
+
+  const migrants = employees.filter((e) => !["british", "irish", "british/irish"].includes(e.nationality?.toLowerCase() || ""));
   const hasMigrants = migrants.length > 0;
-
-  const getProgress = (): Record<string, boolean> => {
-    try { return JSON.parse(sessionStorage.getItem("hr_progress") || "{}"); } catch { return {}; }
-  };
 
   const markRTWComplete = () => {
     try {
-      const p = getProgress();
+      const p = JSON.parse(sessionStorage.getItem("hr_progress") || "{}");
       sessionStorage.setItem("hr_progress", JSON.stringify({ ...p, rtw: true }));
     } catch {}
   };
 
-  const isTabUnlocked = (tabId: TabId): boolean => {
-    if (tabId === "staff" || tabId === "rtw") return true;
-    const p = getProgress();
-    if (tabId === "pension") return !!p.rtw;
-    if (tabId === "auth") return !!p.pension;
-    if (tabId === "contracts") return !!p.auth;
-    if (tabId === "financial") return !!p.contracts;
-    if (tabId === "summary") return !!p.financial;
-    return false;
-  };
-
-  const handleTabClick = (tabId: TabId) => {
-    if (tabId === "rtw") return;
-    if (tabId === "staff") { router.push("/employer/sections/hr-validation"); return; }
-    if (!isTabUnlocked(tabId)) return;
-
-    const routes: Record<Exclude<TabId, "staff" | "rtw">, string> = {
-      pension: "/employer/sections/pension",
-      auth: "/employer/sections/authorising-officer",
-      contracts: "/employer/sections/contracts",
-      financial: "/employer/sections/financial",
-      summary: "/employer/sections/summary",
-    };
-    if (tabId in routes) router.push(routes[tabId as keyof typeof routes]);
-  };
-
-  const handleBack = () => router.push("/employer/sections/hr-validation");
-  const handleContinueToPension = () => { markRTWComplete(); router.push("/employer/sections/pension"); };
+  const handleBack = () => router.push(`/employer/sections/hr-validation?recordId=${recordId}`);
+  const handleContinueToPension = () => { markRTWComplete(); router.push(`/employer/sections/pension?recordId=${recordId}`); };
 
   return (
     <div style={{ fontFamily: "'Segoe UI', system-ui, sans-serif", backgroundColor: "#F1F5F9", minHeight: "100vh" }}>
-      <TopNav activeTabId="rtw" onBack={handleBack} onTabClick={handleTabClick} isTabUnlocked={isTabUnlocked} />
+      <HRValidationTabs currentTabId="rtw" hrRecordId={recordId} onBack={handleBack} />
       {loaded && (hasMigrants
-        ? <RTWVerificationScreen migrants={migrants} onBackToStaffList={handleBack} />
+        ? <RTWVerificationScreen migrants={migrants} onBackToStaffList={handleBack} onContinue={handleContinueToPension} />
         : <NoMigrantScreen onContinue={handleContinueToPension} />
       )}
     </div>

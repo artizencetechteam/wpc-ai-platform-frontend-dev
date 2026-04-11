@@ -1,17 +1,10 @@
 'use client';
 
-import { useState, useEffect, useRef } from "react";
-import { useRouter } from "next/navigation";
+import { useState, useEffect, useRef, Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import HRValidationTabs from "../_components/HRValidationTabs";
 
-const tabs = [
-  { label: "Staff List", id: "staff" },
-  { label: "1. RTW Compliance", id: "rtw" },
-  { label: "2. Pension", id: "pension" },
-  { label: "3. Authorising Officer", id: "auth" },
-  { label: "4. Contracts", id: "contracts" },
-  { label: "5. Financial", id: "financial" },
-  { label: "6. Summary", id: "summary" },
-];
+
 
 
 
@@ -44,6 +37,14 @@ const UploadIcon = () => (
   </svg>
 );
 
+const SpinnerIcon = ({ color = "#0852C9" }: { color?: string }) => (
+  <svg width="20" height="20" viewBox="0 0 20 20" fill="none" style={{ animation: "spin 1s linear infinite" }}>
+    <circle cx="10" cy="10" r="8" stroke="#CBD5E1" strokeWidth="2.5" />
+    <path d="M10 2a8 8 0 018 8" stroke={color} strokeWidth="2.5" strokeLinecap="round" />
+    <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
+  </svg>
+);
+
 
 
 const getProgress = () => {
@@ -57,72 +58,16 @@ const markComplete = (key: string) => {
   } catch {}
 };
 
-const isTabUnlocked = (tabId: string) => {
-  if (tabId === "staff" || tabId === "rtw") return true;
-  if (tabId === "pension") return true;
-  const p = getProgress();
-  if (tabId === "auth") return p.pension;
-  if (tabId === "contracts") return p.auth;
-  if (tabId === "financial") return p.contracts;
-  if (tabId === "summary") return p.financial;
-  return false;
-};
 
-type TopNavProps = {
-  onBack: () => void;
-  onTabClick: (tabId: string) => void;
-};
-
-function TopNav({ onBack, onTabClick }: TopNavProps) {
-  const [mounted, setMounted] = useState(false);
-
-  useEffect(() => {
-    setMounted(true);
-  }, []);
-
-  return (
-    <div style={{ backgroundColor: "white", borderBottom: "1px solid #E2E8F0", padding: "0 28px" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: "10px", paddingTop: "16px", paddingBottom: "2px" }}>
-        <button onClick={onBack} style={{ background: "none", border: "none", cursor: "pointer", padding: "4px", display: "flex", alignItems: "center" }}>
-          <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
-            <path d="M13 15L8 10L13 5" stroke="#374151" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-        </button>
-        <div>
-          <h1 style={{ margin: 0, fontSize: "18px", fontWeight: "700", color: "#0F172A" }}>HR Records Validation</h1>
-          <div style={{ fontSize: "11.5px", color: "#94A3B8", marginTop: "1px" }}>V.03</div>
-        </div>
-      </div>
-      <div style={{ display: "flex", gap: "6px", marginTop: "10px", paddingBottom: "12px", overflowX: "auto" }}>
-        {tabs.map((tab) => {
-          const isActive = tab.id === "pension";
-          const unlocked = mounted ? isTabUnlocked(tab.id) : (tab.id === "staff" || tab.id === "rtw" || tab.id === "pension");
-          return (
-            <button key={tab.id} onClick={() => onTabClick(tab.id)} style={{
-              padding: "6px 16px", borderRadius: "20px",
-              border: isActive ? "none" : "1.5px solid #D1D5DB",
-              cursor: unlocked && !isActive ? "pointer" : "default",
-              fontSize: "13px", fontWeight: isActive ? "600" : "400",
-              color: isActive ? "white" : "#374151",
-              backgroundColor: isActive ? "#0852C9" : "white",
-              whiteSpace: "nowrap", transition: "all 0.15s",
-              boxShadow: isActive ? "none" : "0 1px 2px rgba(0,0,0,0.04)",
-            }}>{tab.label}</button>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
 
 type StepPillsProps = {
-  activeStep: string;
-  onStepClick: (step: string) => void;
+  activeStep: "company" | "eligibility";
+  onStepClick: (step: "company" | "eligibility") => void;
   companyRegistered: string | null;
 };
 
 function StepPills({ activeStep, onStepClick, companyRegistered }: StepPillsProps) {
-  const steps = [
+  const steps: { id: "company" | "eligibility"; label: string }[] = [
     { id: "company", label: "1. Company Registration" },
     { id: "eligibility", label: "2. Employee Eligibility" },
   ];
@@ -420,44 +365,47 @@ function EmployeeEligibilityStep({
 
 
 export default function PensionCompliance() {
+  return (
+    <Suspense fallback={<div style={{ display: "flex", justifyContent: "center", padding: "100px" }}><SpinnerIcon /></div>}>
+      <PensionComplianceImpl />
+    </Suspense>
+  );
+}
+
+function PensionComplianceImpl() {
   const router = useRouter();
- const [employees, setEmployees] = useState<Employee[]>([]);
- const [step, setStep] = useState<string>("company");
-const [companyRegistered, setCompanyRegistered] = useState<string | null>(null);
+  const searchParams = useSearchParams();
+  const [step, setStep] = useState<"company" | "eligibility">("company");
+  const [companyRegistered, setCompanyRegistered] = useState<string | null>(null);
+  const [employees, setEmployees] = useState<Employee[]>([]);
+  const [recordId, setRecordId] = useState<number | null>(null);
 
   useEffect(() => {
+    const queryId = searchParams.get("recordId") || searchParams.get("id");
+    const id = queryId || sessionStorage.getItem("current_hr_record_id");
+    if (id) setRecordId(Number(id));
+
     try {
       const saved = sessionStorage.getItem("hr_employees");
       if (saved) setEmployees(JSON.parse(saved));
     } catch {}
-  }, []);
+  }, [searchParams]);
 
   const handleTabClick = (tabId: string) => {
     if (tabId === "pension") return;
-   const routes: Record<string, string> = {
-  staff: "/employer/sections/hr-validation",
-  rtw: "/employer/sections/hr-validation/rtw-compliance",
-  auth: "/employer/sections/hr-validation/authorising-officer",
-  contracts: "/employer/sections/hr-validation/contracts",
-  financial: "/employer/sections/hr-validation/financial",
-  summary: "/employer/sections/hr-validation/summary",
-};
-    if (!isTabUnlocked(tabId)) return;
-    if (routes[tabId]) router.push(routes[tabId]);
   };
 
   const handleCompanyContinue = () => {
     if (companyRegistered === "yes") {
       setStep("eligibility");
     } else {
-      
-      router.push("/employer/sections/hr-validation");
+      router.push(`/employer/sections/hr-validation?recordId=${recordId}`);
     }
   };
 
   const handleComplete = () => {
     markComplete("pension");
-    router.push("/employer/sections/authorising-officer");
+    router.push(`/employer/sections/authorising-officer?recordId=${recordId}`);
   };
 
   const handleBack = () => router.back();
@@ -465,7 +413,7 @@ const [companyRegistered, setCompanyRegistered] = useState<string | null>(null);
   return (
     <div style={{ fontFamily: "'Segoe UI', system-ui, sans-serif", backgroundColor: "#F1F5F9", minHeight: "100vh" }}>
 
-      <TopNav onBack={handleBack} onTabClick={handleTabClick} />
+      <HRValidationTabs currentTabId="pension" hrRecordId={recordId} />
 
       <div style={{ maxWidth: "860px", margin: "30px auto", padding: "0 24px" }}>
 
@@ -502,7 +450,7 @@ const [companyRegistered, setCompanyRegistered] = useState<string | null>(null);
 
         <div style={{ marginTop: "24px" }}>
           <button
-            onClick={() => router.push("/employer/sections/rtw-compliance")}
+            onClick={() => router.push(`/employer/sections/rtw-compliance?recordId=${recordId}`)}
             style={{
               padding: "10px 20px", backgroundColor: "white", color: "#374151",
               border: "1.5px solid #D1D5DB", borderRadius: "8px",

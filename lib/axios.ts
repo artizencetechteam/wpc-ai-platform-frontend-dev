@@ -28,6 +28,10 @@ const deleteCookie = (name: string) => {
   document.cookie = `${name}=;expires=Thu, 01 Jan 1970 00:00:00 UTC;path=/`;
 };
 
+const getSessionToken = (): string | null => {
+  return getCookie("session-token");
+};
+
 /* ============================================
    TOKEN CHECK
 ============================================ */
@@ -105,6 +109,7 @@ clientApi.interceptors.request.use(
 
           deleteCookie("access-token");
           deleteCookie("refresh-token");
+          deleteCookie("session-token");
 
           if (!isPublicRoute()) {
             window.location.href = "/welcome";
@@ -118,6 +123,11 @@ clientApi.interceptors.request.use(
 
     if (accessToken) {
       config.headers.Authorization = `Bearer ${accessToken}`;
+    }
+
+    const sessionToken = getSessionToken();
+    if (sessionToken) {
+      config.headers["X-Session-Token"] = sessionToken;
     }
 
     return config;
@@ -167,6 +177,7 @@ clientApi.interceptors.response.use(
 
         deleteCookie("access-token");
         deleteCookie("refresh-token");
+        deleteCookie("session-token");
 
         if (!isPublicRoute()) {
           window.location.href = "/welcome";

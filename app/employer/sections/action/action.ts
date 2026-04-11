@@ -6,30 +6,44 @@ const BASE_URL = 'http://37.27.113.235:6767';
 
 // ─── Token helpers ────────────────────────────────────────────────────────────
 
-async function resolveToken(clientToken?: any): Promise<string> {
+async function resolveToken(clientToken?: any): Promise<{ accessToken: string; sessionToken: string }> {
+  let accessToken = '';
+  let sessionToken = '';
+
   if (clientToken) {
     if (typeof clientToken === 'object') {
-      const extracted =
+      accessToken =
         clientToken.access ??
         clientToken.token ??
         clientToken.access_token ??
         clientToken.key ??
         '';
-      if (typeof extracted === 'string' && extracted.length > 10) return extracted;
-    }
-    if (typeof clientToken === 'string') {
-      const cleaned = clientToken.replace(/\s+/g, '').replace(/^(Bearer|Token)\s*/i, '');
-      if (cleaned && cleaned !== 'undefined' && cleaned !== 'null') return cleaned;
+      sessionToken =
+        clientToken.session_token ??
+        clientToken.session_id ??
+        clientToken.sessionID ??
+        '';
+    } else if (typeof clientToken === 'string') {
+      accessToken = clientToken.replace(/\s+/g, '').replace(/^(Bearer|Token)\s*/i, '');
     }
   }
+
   const store = await cookies();
-  const raw = store.get('access-token')?.value ?? store.get('access_token')?.value ?? '';
-  return raw.replace(/\s+/g, '').replace(/^(Bearer|Token)\s*/i, '');
+  if (!accessToken) {
+    const raw = store.get('access-token')?.value ?? store.get('access_token')?.value ?? '';
+    accessToken = raw.replace(/\s+/g, '').replace(/^(Bearer|Token)\s*/i, '');
+  }
+  if (!sessionToken) {
+    sessionToken = store.get('session-token')?.value ?? '';
+  }
+
+  return { accessToken, sessionToken };
 }
 
-function makeHeaders(token: string): Record<string, string> {
+function makeHeaders(accessToken: string, sessionToken?: string): Record<string, string> {
   const h: Record<string, string> = { 'Content-Type': 'application/json' };
-  if (token) h['Authorization'] = `Bearer ${token}`;
+  if (accessToken) h['Authorization'] = `Bearer ${accessToken}`;
+  if (sessionToken) h['X-Session-Token'] = sessionToken;
   return h;
 }
 
@@ -38,10 +52,10 @@ async function apiFetch(
   options: RequestInit = {},
   clientToken?: string,
 ): Promise<Response> {
-  const token = await resolveToken(clientToken);
+  const { accessToken, sessionToken } = await resolveToken(clientToken);
   const res = await fetch(url, {
     ...options,
-    headers: makeHeaders(token),
+    headers: makeHeaders(accessToken, sessionToken),
     cache: 'no-store',
   });
   console.log(`[apiFetch] ${options.method ?? 'GET'} ${url} → ${res.status}`);

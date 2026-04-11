@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useRef, useCallback, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useState, useRef, useCallback, useEffect, Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   listEmployeesAction,
   addEmployeeAction,
@@ -9,6 +9,7 @@ import {
   listHRValidationRecordsAction,
   type Employee,
 } from "@/app/employer/sections/action/action";
+import HRValidationTabs from "../_components/HRValidationTabs";
 
 
 
@@ -40,24 +41,7 @@ function getClientToken(): string {
 
 
 
-const tabs = [
-  { label: "Staff List", id: "staff" },
-  { label: "1. RTW Compliance", id: "rtw" },
-  { label: "2. Pension", id: "pension" },
-  { label: "3. Authorising Officer", id: "auth" },
-  { label: "4. Contracts", id: "contracts" },
-  { label: "5. Financial", id: "financial" },
-  { label: "6. Summary", id: "summary" },
-];
 
-const TAB_ROUTES: Record<string, string> = {
-  rtw: "/employer/sections/rtw-compliance",
-  pension: "/employer/sections/hr-validation/pension",
-  auth: "/employer/sections/hr-validation/authorising-officer",
-  contracts: "/employer/sections/hr-validation/contracts",
-  financial: "/employer/sections/hr-validation/financial",
-  summary: "/employer/sections/hr-validation/summary",
-};
 
 
 
@@ -291,7 +275,16 @@ function RTWUploadArea({
 
 
 export default function HRRecordsValidation() {
+  return (
+    <Suspense fallback={<div style={{ display: "flex", justifyContent: "center", padding: "100px" }}><SpinnerIcon /></div>}>
+      <HRRecordsValidationImpl />
+    </Suspense>
+  );
+}
+
+function HRRecordsValidationImpl() {
   const router = useRouter();
+  const searchParams = useSearchParams();
 
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [hrRecordId, setHrRecordId] = useState<number | null>(null);
@@ -302,7 +295,6 @@ export default function HRRecordsValidation() {
   const [modalStep, setModalStep] = useState<"choose" | "manual" | "rtw">("choose");
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState("");
-  const [tabProgress, setTabProgress] = useState<Record<string, boolean>>({});
 
   const [manualForm, setManualForm] = useState<ManualForm>({ name: "", nationality: "British", startDate: "" });
   const [rtwForm, setRtwForm] = useState<RTWForm>({
@@ -311,35 +303,33 @@ export default function HRRecordsValidation() {
     file: null, fileUrl: "", fileKey: "", // ← ADDED fileKey
   });
 
-  useEffect(() => { initHRRecord(); }, []);
-
-  useEffect(() => {
-    try {
-      const p = sessionStorage.getItem("hr_progress");
-      setTabProgress(p ? JSON.parse(p) : {});
-    } catch {
-      setTabProgress({});
-    }
-  }, []);
+  useEffect(() => { initHRRecord(); }, [searchParams]);
 
   async function initHRRecord() {
     setLoading(true);
     setApiError("");
     try {
       const token = getClientToken();
-      const listRes = await listHRValidationRecordsAction(token);
 
+      // 1. Check for explicit recordId or action=new in URL
+      const queryId = searchParams.get("recordId") || searchParams.get("id");
+      const isNew = searchParams.get("action") === "new";
+
+      const listRes = await listHRValidationRecordsAction(token);
       if (!listRes.success) {
         setApiError(listRes.message);
         setLoading(false);
         return;
       }
 
+      const records = listRes.data ?? [];
+      // Sort records by ID descending so data[0] is the NEWEST
+      const sortedRecords = [...records].sort((a, b) => b.id - a.id);
+
       let recordId: number | null = null;
 
-      if (listRes.data && listRes.data.length > 0) {
-        recordId = listRes.data[0].id;
-      } else {
+      if (isNew) {
+        // Create brand new record
         let userId: number | null = null;
         try {
           const raw = document.cookie
@@ -368,10 +358,46 @@ export default function HRRecordsValidation() {
         }
         recordId = createRes.data?.id ?? null;
       }
+      else if (queryId) {
+        // Use specific ID from URL
+        recordId = Number(queryId);
+      }
+      else if (sortedRecords.length > 0) {
+        // Fallback: Use newest existing record
+        recordId = sortedRecords[0].id;
+      }
+      else {
+        // No records exist and none requested: Create first one
+        let userId: number | null = null;
+        try {
+          const raw = document.cookie
+            .split("; ")
+            .find((r) => r.startsWith("user-info="))
+            ?.split("=")
+            .slice(1)
+            .join("=");
+          if (raw) {
+            const parsed = JSON.parse(decodeURIComponent(raw));
+            userId = parsed?.id ?? null;
+          }
+        } catch { /* ignore */ }
+
+        if (userId) {
+          const createRes = await createHRValidationRecordAction(userId, token);
+          if (createRes.success) recordId = createRes.data?.id ?? null;
+        }
+      }
 
       setHrRecordId(recordId);
-      if (recordId !== null) await loadEmployees(recordId, token);
-    } catch {
+      if (recordId !== null) {
+        sessionStorage.setItem("current_hr_record_id", String(recordId));
+        if (isNew) {
+          router.replace(`/employer/sections/hr-validation?recordId=${recordId}`);
+        }
+        await loadEmployees(recordId, token);
+      }
+    } catch (e) {
+      console.error("initHRRecord error:", e);
       setApiError("Unexpected error initialising HR record.");
     } finally {
       setLoading(false);
@@ -424,9 +450,6 @@ export default function HRRecordsValidation() {
     if (!rtwForm.name.trim() || !rtwForm.startDate || hrRecordId === null) return;
     setSubmitting(true);
     setSubmitError("");
-    console.log("fileKey:", rtwForm.fileKey);
-    console.log("fileKey length:", rtwForm.fileKey?.length);
-    console.log("fileUrl:", rtwForm.fileUrl);
     const res = await addEmployeeAction(
       {
         employee_full_name: rtwForm.name,
@@ -461,21 +484,7 @@ export default function HRRecordsValidation() {
 
   const staffComplete = employees.length > 0;
 
-  const isTabUnlocked = (tabId: string) => {
-    if (tabId === "staff") return true;
-    if (tabId === "rtw") return staffComplete;
-    if (tabId === "pension") return tabProgress.rtw;
-    if (tabId === "auth") return tabProgress.pension;
-    if (tabId === "contracts") return tabProgress.auth;
-    if (tabId === "financial") return tabProgress.contracts;
-    if (tabId === "summary") return tabProgress.financial;
-    return false;
-  };
 
-  const handleTabClick = (tabId: string) => {
-    if (tabId === "staff" || !isTabUnlocked(tabId)) return;
-    if (TAB_ROUTES[tabId]) router.push(TAB_ROUTES[tabId]);
-  };
 
   const manualFormValid = manualForm.name.trim() && manualForm.startDate;
   // ← UPDATED: rtwFormValid now checks fileKey instead of fileUrl for DB safety
@@ -483,41 +492,11 @@ export default function HRRecordsValidation() {
 
   return (
     <div style={{ fontFamily: "'Segoe UI', system-ui, sans-serif", backgroundColor: "#F1F5F9", minHeight: "100vh" }}>
-
-      <div style={{ backgroundColor: "white", borderBottom: "1px solid #E2E8F0", padding: "0 28px" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: "10px", paddingTop: "16px", paddingBottom: "2px" }}>
-          
-          <button onClick={() => router.push("/")} style={{ background: "none", border: "none", cursor: "pointer", padding: "4px", display: "flex", alignItems: "center" }}>
-            <img src="/logo/main.png" alt="WPC AI" style={{ height: "32px", objectFit: "contain" }} />
-
-          </button>
-
-          <div style={{ marginLeft: "12px" }}>
-            <h1 style={{ margin: 0, fontSize: "22px", fontWeight: "800", color: "#0F172A", letterSpacing: "-0.3px" }}>HR Records Validation</h1>
-            <div style={{ fontSize: "11.5px", color: "#94A3B8", marginTop: "1px" }}>
-              V.03{hrRecordId ? ` · Record #${hrRecordId}` : ""}
-            </div>
-          </div>
-        </div>
-        <div style={{ display: "flex", gap: "6px", marginTop: "10px", paddingBottom: "12px", overflowX: "auto" }}>
-          {tabs.map((tab) => {
-            const isActive = tab.id === "staff";
-            const unlocked = isTabUnlocked(tab.id);
-            return (
-              <button key={tab.id} onClick={() => handleTabClick(tab.id)} style={{
-                padding: "6px 16px", borderRadius: "20px",
-                border: isActive ? "none" : "1.5px solid #D1D5DB",
-                cursor: unlocked && !isActive ? "pointer" : "default",
-                fontSize: "13px", fontWeight: isActive ? "600" : "400",
-                color: isActive ? "white" : unlocked ? "#374151" : "#9CA3AF",
-                backgroundColor: isActive ? "#0852C9" : "white",
-                whiteSpace: "nowrap", transition: "all 0.15s",
-                boxShadow: isActive ? "none" : "0 1px 2px rgba(0,0,0,0.04)",
-              }}>{tab.label}</button>
-            );
-          })}
-        </div>
-      </div>
+      <HRValidationTabs 
+        currentTabId="staff" 
+        hrRecordId={hrRecordId} 
+        staffComplete={staffComplete}
+      />
 
       <div style={{ maxWidth: "860px", margin: "30px auto", padding: "0 24px" }}>
 
@@ -609,7 +588,7 @@ export default function HRRecordsValidation() {
 
         {employees.length > 0 && (
           <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "20px" }}>
-            <button onClick={() => router.push("/employer/sections/rtw-compliance")}
+            <button onClick={() => router.push(`/employer/sections/rtw-compliance?recordId=${hrRecordId}`)}
               style={{ backgroundColor: "#0852C9", color: "white", border: "none", borderRadius: "8px", padding: "12px 26px", fontSize: "14px", fontWeight: "600", cursor: "pointer" }}>
               Proceed to Validation Workflows →
             </button>

@@ -13,13 +13,19 @@ export async function getAuthHeaders(): Promise<Record<string, string>> {
     '';
 
   const token = raw.replace(/\s+/g, '').replace(/^(Bearer|Token)\s*/i, '');
+  const sessionToken = cookieStore.get('session-token')?.value || '';
 
-  if (!token || token === 'undefined' || token === 'null') {
-    return { 'Content-Type': 'application/json' };
-  }
-
-  return {
-    Authorization: `Bearer ${token}`,
+  const headers: Record<string, string> = {
     'Content-Type': 'application/json',
   };
+
+  if (token && token !== 'undefined' && token !== 'null') {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+
+  if (sessionToken && sessionToken !== 'undefined' && sessionToken !== 'null') {
+    headers['X-Session-Token'] = sessionToken;
+  }
+
+  return headers;
 }

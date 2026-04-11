@@ -1,7 +1,8 @@
 'use client';
 
-import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useState, useEffect, Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import HRValidationTabs from "../_components/HRValidationTabs";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -84,15 +85,7 @@ interface ContractsSyncStepProps {
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
-const tabs: Tab[] = [
-  { label: "Staff List", id: "staff" },
-  { label: "1. RTW Compliance", id: "rtw" },
-  { label: "2. Pension", id: "pension" },
-  { label: "3. Authorising Officer", id: "auth" },
-  { label: "4. Contracts", id: "contracts" },
-  { label: "5. Financial", id: "financial" },
-  { label: "6. Summary", id: "summary" },
-];
+
 
 const STEPS: Step[] = [
   { id: "balance", label: "1. Balance" },
@@ -106,22 +99,22 @@ const NON_COMPLIANT_REFS = ["loan", "gift", "director investment", "director's l
 
 // ─── Session helpers ──────────────────────────────────────────────────────────
 
-const getProgress = (): Progress => {
-  try { return JSON.parse(sessionStorage.getItem("hr_progress") || "{}"); } catch { return {}; }
-};
+function TopNav({ onBack }: { onBack: () => void }) {
+  const searchParams = useSearchParams();
+  const [recordId, setRecordId] = useState<number | null>(null);
+  useEffect(() => {
+    const queryId = searchParams.get("recordId") || searchParams.get("id");
+    const id = queryId || sessionStorage.getItem("current_hr_record_id");
+    if (id) setRecordId(Number(id));
+  }, [searchParams]);
+  return <HRValidationTabs currentTabId="financial" hrRecordId={recordId} onBack={onBack} />;
+}
 
 const markComplete = (key: string): void => {
   try {
-    const p = getProgress();
+    const p = JSON.parse(sessionStorage.getItem("hr_progress") || "{}");
     sessionStorage.setItem("hr_progress", JSON.stringify({ ...p, [key]: true }));
   } catch {}
-};
-
-const isTabUnlocked = (tabId: string): boolean => {
-  if (["staff", "rtw", "pension", "auth", "contracts", "financial"].includes(tabId)) return true;
-  const p = getProgress();
-  if (tabId === "summary") return !!p.financial;
-  return false;
 };
 
 function getTransactionStatus(ref: string): "ok" | "fail" {
@@ -172,6 +165,14 @@ const GreenCircleCheck = (): React.JSX.Element => (
   </svg>
 );
 
+const SpinnerIcon = ({ color = "#0852C9" }: { color?: string }) => (
+  <svg width="20" height="20" viewBox="0 0 20 20" fill="none" style={{ animation: "spin 1s linear infinite" }}>
+    <circle cx="10" cy="10" r="8" stroke="#CBD5E1" strokeWidth="2.5" />
+    <path d="M10 2a8 8 0 018 8" stroke={color} strokeWidth="2.5" strokeLinecap="round" />
+    <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
+  </svg>
+);
+
 const ArrowUpGreen = (): React.JSX.Element => (
   <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
     <path d="M7 11V3M7 3l-3 3M7 3l3 3" stroke="#16A34A" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
@@ -184,41 +185,7 @@ const ArrowDownRed = (): React.JSX.Element => (
   </svg>
 );
 
-// ─── TopNav ───────────────────────────────────────────────────────────────────
 
-function TopNav({ onBack, onTabClick }: TopNavProps): React.JSX.Element {
-  return (
-    <div style={{ backgroundColor: "white", borderBottom: "1px solid #E2E8F0", padding: "0 28px" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: "10px", paddingTop: "16px", paddingBottom: "2px" }}>
-        <button onClick={onBack} style={{ background: "none", border: "none", cursor: "pointer", padding: "4px", display: "flex", alignItems: "center" }}>
-          <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M13 15L8 10L13 5" stroke="#374151" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg>
-        </button>
-        <div>
-          <h1 style={{ margin: 0, fontSize: "18px", fontWeight: "700", color: "#0F172A" }}>HR Records Validation</h1>
-          <div style={{ fontSize: "11.5px", color: "#94A3B8", marginTop: "1px" }}>V.03</div>
-        </div>
-      </div>
-      <div style={{ display: "flex", gap: "6px", marginTop: "10px", paddingBottom: "12px", overflowX: "auto" }}>
-        {tabs.map((tab) => {
-          const isActive = tab.id === "financial";
-          const unlocked = isTabUnlocked(tab.id);
-          return (
-            <button key={tab.id} onClick={() => onTabClick(tab.id)} style={{
-              padding: "6px 16px", borderRadius: "20px",
-              border: isActive ? "none" : "1.5px solid #D1D5DB",
-              cursor: unlocked && !isActive ? "pointer" : "default",
-              fontSize: "13px", fontWeight: isActive ? "600" : "400",
-              color: isActive ? "white" : "#374151",
-              backgroundColor: isActive ? "#0852C9" : "white",
-              whiteSpace: "nowrap", transition: "all 0.15s",
-              boxShadow: isActive ? "none" : "0 1px 2px rgba(0,0,0,0.04)",
-            }}>{tab.label}</button>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
 
 // ─── StepPills ────────────────────────────────────────────────────────────────
 
@@ -559,34 +526,38 @@ function ContractsSyncStep({ onComplete, onPrev, savedContracts }: ContractsSync
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
-export default function FinancialPage(): React.JSX.Element {
+export default function FinancialPage() {
+  return (
+    <Suspense fallback={<div style={{ display: "flex", justifyContent: "center", padding: "100px" }}><SpinnerIcon /></div>}>
+      <FinancialPageImpl />
+    </Suspense>
+  );
+}
+
+function FinancialPageImpl(): React.JSX.Element {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [step, setStep] = useState<string>("balance");
   const [unlockedUpTo, setUnlockedUpTo] = useState<number>(0);
   const [financialData, setFinancialData] = useState<FinancialData>({});
   const [savedContracts, setSavedContracts] = useState<SavedContract[]>([]);
+  const [recordId, setRecordId] = useState<number | null>(null);
 
   useEffect(() => {
+    const queryId = searchParams.get("recordId") || searchParams.get("id");
+    const id = queryId || sessionStorage.getItem("current_hr_record_id");
+    if (id) setRecordId(Number(id));
+
     try {
       const c = sessionStorage.getItem("hr_contracts");
       if (c) setSavedContracts(JSON.parse(c) as SavedContract[]);
     } catch {}
-  }, []);
+  }, [searchParams]);
 
   const stepIds = ["balance", "cashflow", "investments", "contracts"];
 
   const handleTabClick = (tabId: string): void => {
     if (tabId === "financial") return;
-    const routes: Record<string, string> = {
-      staff: "/employer/sections/hr-validation",
-      rtw: "/employer/sections/hr-validation/rtw-compliance",
-      pension: "/employer/sections/hr-validation/pension",
-      auth: "/employer/sections/hr-validation/authorising-officer",
-      contracts: "/employer/sections/hr-validation/contracts",
-      summary: "/employer/sections/hr-validation/summary",
-    };
-    if (!isTabUnlocked(tabId)) return;
-    if (routes[tabId]) router.push(routes[tabId]);
   };
 
   const goToStep = (id: string): void => setStep(id);
@@ -604,12 +575,12 @@ export default function FinancialPage(): React.JSX.Element {
 
   const handleComplete = (): void => {
     markComplete("financial");
-    router.push("/employer/sections/summary");
+    router.push(`/employer/sections/summary?recordId=${recordId}`);
   };
 
   return (
     <div style={{ fontFamily: "'Segoe UI', system-ui, sans-serif", backgroundColor: "#F1F5F9", minHeight: "100vh" }}>
-      <TopNav onBack={() => router.back()} onTabClick={handleTabClick} />
+      <TopNav onBack={() => router.back()} />
 
       <div style={{ maxWidth: "860px", margin: "30px auto", padding: "0 24px" }}>
         <div style={{ marginBottom: "20px" }}>
@@ -626,7 +597,7 @@ export default function FinancialPage(): React.JSX.Element {
 
         <div style={{ marginTop: "20px" }}>
           {step === "balance" ? (
-            <button onClick={() => router.push("/employer/sections/contracts")} style={backBtn}>Back to Contract Validation</button>
+            <button onClick={() => router.push(`/employer/sections/contracts?recordId=${recordId}`)} style={backBtn}>Back to Contract Validation</button>
           ) : (
             <button onClick={() => { const idx = stepIds.indexOf(step); setStep(stepIds[idx - 1]); }} style={backBtn}>Previous Step</button>
           )}

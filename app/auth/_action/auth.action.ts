@@ -42,6 +42,9 @@ const extractAccessToken = (data: any): string | null => {
 const extractRefreshToken = (data: any): string | null =>
   data?.refresh ?? data?.refresh_token ?? data?.refreshToken ?? null;
 
+const extractSessionToken = (data: any): string | null =>
+  data?.session_token ?? data?.session_id ?? data?.sessionID ?? data?.sessionId ?? data?.session ?? null;
+
 const extractUser = (data: any) => {
   const u = data?.user?.user ?? data?.user ?? data?.data ?? data;
   return {
@@ -59,6 +62,7 @@ const setCookies = async (data: any) => {
   const cookieStore = await cookies();
   const accessToken  = extractAccessToken(data);
   const refreshToken = extractRefreshToken(data);
+  const sessionToken = extractSessionToken(data);
   const userObj      = extractUser(data);
 
   
@@ -81,6 +85,16 @@ const setCookies = async (data: any) => {
 
   if (refreshToken) {
     cookieStore.set("refresh-token", refreshToken, {
+      httpOnly: false,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
+      path: "/",
+      maxAge: 60 * 60 * 24 * 7,
+    });
+  }
+
+  if (sessionToken) {
+    cookieStore.set("session-token", sessionToken, {
       httpOnly: false,
       secure: process.env.NODE_ENV === "production",
       sameSite: "lax",
@@ -324,6 +338,7 @@ export async function logoutAction(): Promise<{ success: boolean }> {
   const cookieStore = await cookies();
   cookieStore.delete("access-token");
   cookieStore.delete("refresh-token");
+  cookieStore.delete("session-token");
   cookieStore.delete("user-info");
   return { success: true };
 }

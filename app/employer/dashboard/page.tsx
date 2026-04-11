@@ -349,7 +349,7 @@ export default function EmployerDashboard() {
           className="bg-[#1A56DB] hover:bg-[#1648C4] text-white text-[12px] sm:text-[13px] font-medium px-3 sm:px-4 py-2 rounded-lg transition inline-block">
           + Post Compliance
         </Link>
-        <Link href="./sections/hr-validation"
+        <Link href={`./sections/company?action=new&t=${Date.now()}`}
           className="bg-[#1A56DB] hover:bg-[#1648C4] text-white text-[12px] sm:text-[13px] font-medium px-3 sm:px-4 py-2 rounded-lg transition inline-block">
           + HR Validation
         </Link>
@@ -450,7 +450,7 @@ export default function EmployerDashboard() {
                               className="text-[#6B7280] hover:text-[#0852C9] transition"
                               onClick={(e) => {
                                 e.stopPropagation();
-                                router.push('/employer/sections/hr-validation');
+                                router.push(`/employer/sections/company?recordId=${task.id}`);
                               }}
                               title="Go to HR Validation"
                             >
