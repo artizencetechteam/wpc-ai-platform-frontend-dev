@@ -1,7 +1,9 @@
 'use client';
 
-import { useState, useEffect, Suspense } from "react";
+import { useState, useEffect, Suspense, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import axios from "axios";
+import toast from "react-hot-toast";
 import HRValidationTabs from "../_components/HRValidationTabs";
 import { listHRValidationRecordsAction, listEmployeesAction } from "@/app/employer/sections/action/action";
 
@@ -47,6 +49,13 @@ const SpinnerIcon = ({ color = "#0852C9" }: { color?: string }) => (
     <circle cx="10" cy="10" r="8" stroke="#CBD5E1" strokeWidth="2.5" />
     <path d="M10 2a8 8 0 018 8" stroke={color} strokeWidth="2.5" strokeLinecap="round" />
     <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
+  </svg>
+);
+
+const CloudIcon = (): React.JSX.Element => (
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M17.5 19L19 19C21.2091 19 23 17.2091 23 15C23 12.7909 21.2091 11 19 11C18.8296 11 18.6625 11.0107 18.4988 11.0317C17.7412 8.14811 15.1182 6 12 6C9.11584 6 6.6247 7.8258 5.67232 10.3957C3.12061 10.7483 1 12.9163 1 15.5C1 18.5376 3.46243 21 6.5 21L8 21" />
+    <path d="M12 11V21M12 11L9 14M12 11L15 14" />
   </svg>
 );
 
@@ -98,6 +107,45 @@ function RTWVerificationScreen({ migrants, onBackToStaffList, onContinue }: { mi
   const hasDocument = !!(employee?.documentType || employee?.documentNumber);
   const formattedStart = employee?.startDate ? formatDate(employee.startDate) : null;
 
+  const [isExtracting, setIsExtracting] = useState(false);
+  const [extractedData, setExtractedData] = useState<any>(null);
+  const [manualName, setManualName] = useState("");
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const formData = new FormData();
+    formData.append("file", file);
+
+    setIsExtracting(true);
+    const loadingToast = toast.loading("Analyzing RTW document...");
+
+    try {
+      const response = await axios.post("/api/extract-rtw", formData);
+      const data = response.data;
+
+      if (data.success) {
+        setExtractedData(data.extracted);
+        if (data.extracted.name_extraction_failed) {
+          toast.error("Name could not be extracted automatically. Manual input required.");
+        } else {
+          toast.success("RTW details extracted successfully!");
+        }
+      } else {
+        toast.error(data.message || "Extraction failed.");
+      }
+    } catch (err: any) {
+      console.error("RTW extraction error:", err);
+      toast.error(err.response?.data?.details || "Failed to parse RTW document.");
+    } finally {
+      setIsExtracting(false);
+      toast.dismiss(loadingToast);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  };
+
   return (
     <div style={{ maxWidth: "860px", margin: "30px auto", padding: "0 24px" }}>
       {/* Header */}
@@ -130,11 +178,30 @@ function RTWVerificationScreen({ migrants, onBackToStaffList, onContinue }: { mi
           backgroundColor: "#EFF6FF", display: "flex", alignItems: "center", justifyContent: "center",
           fontSize: "18px", fontWeight: "700", color: "#0852C9", flexShrink: 0,
         }}>{getInitial(employee?.name)}</div>
-        <div>
+        <div style={{ flex: 1 }}>
           <div style={{ fontSize: "17px", fontWeight: "700", color: "#0F172A" }}>{employee?.name}</div>
           <div style={{ fontSize: "13px", color: "#64748B", marginTop: "4px" }}>
             Migrant Worker{formattedStart ? ` • Employment Start: ${formattedStart}` : ""}
           </div>
+        </div>
+        
+        {/* Upload/Change Button */}
+        <div>
+          <input type="file" ref={fileInputRef} onChange={handleFileUpload} style={{ display: "none" }} accept=".pdf,.png,.jpg,.jpeg" />
+          <button 
+            onClick={() => fileInputRef.current?.click()}
+            disabled={isExtracting}
+            style={{
+              display: "flex", alignItems: "center", gap: "8px",
+              padding: "9px 16px", backgroundColor: "#F0F9FF",
+              border: "1.5px solid #0EA5E9", borderRadius: "8px",
+              color: "#0369A1", fontSize: "13.5px", fontWeight: "600",
+              cursor: isExtracting ? "not-allowed" : "pointer"
+            }}
+          >
+            {isExtracting ? <SpinnerIcon color="#0EA5E9" /> : <CloudIcon />}
+            {isExtracting ? "Analyzing..." : hasDocument ? "Change Document" : "Upload RTW Document"}
+          </button>
         </div>
       </div>
 
@@ -145,7 +212,8 @@ function RTWVerificationScreen({ migrants, onBackToStaffList, onContinue }: { mi
       }}>
         <h3 style={{ margin: "0 0 5px", fontSize: "16px", fontWeight: "700", color: "#0F172A" }}>RTW Document Verification</h3>
         <p style={{ margin: "0 0 18px", fontSize: "13px", color: "#64748B" }}>Verify the uploaded RTW document and extracted information</p>
-        {!hasDocument ? (
+        
+        {!hasDocument && !extractedData ? (
           <div style={{
             display: "flex", alignItems: "flex-start", gap: "11px",
             padding: "14px 18px",
@@ -156,7 +224,7 @@ function RTWVerificationScreen({ migrants, onBackToStaffList, onContinue }: { mi
             <div>
               <div style={{ fontSize: "14px", fontWeight: "600", color: "#DC2626", marginBottom: "3px" }}>RTW Document Missing</div>
               <div style={{ fontSize: "13px", color: "#DC2626", lineHeight: "1.5" }}>
-                No RTW document has been uploaded for this employee. Validation cannot proceed.
+                No RTW document has been uploaded for this employee. Please upload a document to proceed.
               </div>
             </div>
           </div>
@@ -165,23 +233,82 @@ function RTWVerificationScreen({ migrants, onBackToStaffList, onContinue }: { mi
             padding: "16px 18px", backgroundColor: "#F0FDF4",
             borderRadius: "8px", border: "1.5px solid #BBF7D0",
           }}>
-            <div style={{ fontSize: "14px", fontWeight: "600", color: "#166534", marginBottom: "10px" }}>✓ RTW Document on File</div>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px,1fr))", gap: "12px" }}>
-              {employee.documentType && <div>
-                <div style={{ fontSize: "11px", color: "#6B7280", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: "3px" }}>Document Type</div>
-                <div style={{ fontSize: "13.5px", fontWeight: "600", color: "#0F172A" }}>{employee.documentType}</div>
-              </div>}
-              {employee.documentNumber && <div>
-                <div style={{ fontSize: "11px", color: "#6B7280", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: "3px" }}>Document No.</div>
-                <div style={{ fontSize: "13.5px", fontWeight: "600", color: "#0F172A" }}>{employee.documentNumber}</div>
-              </div>}
+            <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "14px" }}>
+              <div style={{ color: "#166534", fontSize: "14px", fontWeight: "700" }}>✓ {extractedData ? "Extracted Information" : "Document on File"}</div>
             </div>
+
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "16px" }}>
+              {/* Employee Name / Manual Input */}
+              <div>
+                <div style={{ fontSize: "11px", color: "#6B7280", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: "4px" }}>Employee Name</div>
+                {extractedData?.name_extraction_failed ? (
+                  <div style={{ marginTop: "4px" }}>
+                    <input 
+                      type="text" 
+                      value={manualName} 
+                      onChange={(e) => setManualName(e.target.value)}
+                      placeholder="Enter employee name manually"
+                      style={{
+                        width: "100%", padding: "8px 10px", borderRadius: "6px",
+                        border: "1.5px solid #FCA5A5", fontSize: "13px", outline: "none"
+                      }}
+                    />
+                    <div style={{ fontSize: "11px", color: "#DC2626", marginTop: "3px" }}>Auto-extraction failed. Please enter manually.</div>
+                  </div>
+                ) : (
+                  <div style={{ fontSize: "14px", fontWeight: "600", color: "#0F172A" }}>
+                    {extractedData?.employee_name || employee.name}
+                  </div>
+                )}
+              </div>
+
+              {/* Company Name */}
+              {(extractedData?.company_name || hasDocument) && (
+                <div>
+                  <div style={{ fontSize: "11px", color: "#6B7280", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: "4px" }}>Company Name</div>
+                  <div style={{ fontSize: "14px", fontWeight: "600", color: "#0F172A" }}>
+                    {extractedData?.company_name || employee.documentType || "N/A"}
+                  </div>
+                </div>
+              )}
+
+              {/* Visa Expiry */}
+              {(extractedData?.visa_expiry_date || hasDocument) && (
+                <div>
+                  <div style={{ fontSize: "11px", color: "#6B7280", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: "4px" }}>Visa Expiry Date</div>
+                  <div style={{ fontSize: "14px", fontWeight: "600", color: "#0F172A" }}>
+                    {extractedData?.visa_expiry_date ? formatDate(extractedData.visa_expiry_date) : "N/A"}
+                  </div>
+                </div>
+              )}
+
+              {/* Reference Number */}
+              {(extractedData?.reference_number || employee.documentNumber) && (
+                <div>
+                  <div style={{ fontSize: "11px", color: "#6B7280", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: "4px" }}>Reference Number</div>
+                  <div style={{ fontSize: "14px", fontWeight: "600", color: "#0F172A" }}>
+                    {extractedData?.reference_number || employee.documentNumber || "N/A"}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Routing / Reason (Metadata from AI) */}
+            {extractedData?.routing && (
+              <div style={{ marginTop: "16px", paddingTop: "14px", borderTop: "1px solid #BBF7D0" }}>
+                <div style={{ fontSize: "11px", color: "#64748B", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: "4px" }}>Compliance Context</div>
+                <div style={{ fontSize: "12.5px", color: "#166534", lineHeight: "1.5" }}>
+                  {extractedData.routing.reason}
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>
 
       {/* Navigation */}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+...
         <button onClick={onBackToStaffList} style={{
           padding: "10px 20px", backgroundColor: "white", color: "#374151",
           border: "1.5px solid #D1D5DB", borderRadius: "8px",

@@ -592,9 +592,33 @@ function InvestmentsStep({ onNext, onPrev, onSave }: InvestmentsStepProps): Reac
                   </>
                 ) : (
                   <>
-                    <div style={{ fontSize: "14px", color: "#0F172A", fontWeight: "500" }}>£{t.amount.toLocaleString()}</div>
-                    <div style={{ fontSize: "13.5px", color: "#374151", textTransform: "capitalize" }}>{t.type}</div>
-                    <div style={{ fontSize: "13.5px", color: "#374151" }}>{t.reference}</div>
+                    <div 
+                      onClick={() => handleEditStart(t)} 
+                      title="Click to edit"
+                      style={{ fontSize: "14px", color: "#0F172A", fontWeight: "500", cursor: "pointer", padding: "4px", borderRadius: "4px", transition: "background 0.2s" }}
+                      onMouseOver={(e) => e.currentTarget.style.backgroundColor = "#F1F5F9"}
+                      onMouseOut={(e) => e.currentTarget.style.backgroundColor = "transparent"}
+                    >
+                      £{t.amount.toLocaleString()}
+                    </div>
+                    <div 
+                      onClick={() => handleEditStart(t)} 
+                      title="Click to edit"
+                      style={{ fontSize: "13.5px", color: "#374151", textTransform: "capitalize", cursor: "pointer", padding: "4px", borderRadius: "4px", transition: "background 0.2s" }}
+                      onMouseOver={(e) => e.currentTarget.style.backgroundColor = "#F1F5F9"}
+                      onMouseOut={(e) => e.currentTarget.style.backgroundColor = "transparent"}
+                    >
+                      {t.type}
+                    </div>
+                    <div 
+                      onClick={() => handleEditStart(t)} 
+                      title="Click to edit"
+                      style={{ fontSize: "13.5px", color: "#374151", cursor: "pointer", padding: "4px", borderRadius: "4px", transition: "background 0.2s" }}
+                      onMouseOver={(e) => e.currentTarget.style.backgroundColor = "#F1F5F9"}
+                      onMouseOut={(e) => e.currentTarget.style.backgroundColor = "transparent"}
+                    >
+                      {t.reference}
+                    </div>
                     <div>
                       <span style={{ display: "inline-flex", alignItems: "center", gap: "5px", padding: "3px 12px", borderRadius: "20px", fontSize: "12px", fontWeight: "600", backgroundColor: t.status === "ok" ? "#0852C9" : "#DC2626", color: "white" }}>
                         <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><circle cx="5" cy="5" r="4" stroke="white" strokeWidth="1.2" fill="none" />{t.status === "ok" ? <path d="M3 5l1.5 1.5L7 3.5" stroke="white" strokeWidth="1.2" strokeLinecap="round" /> : <path d="M3.5 3.5l3 3M6.5 3.5l-3 3" stroke="white" strokeWidth="1.2" strokeLinecap="round" />}</svg>
@@ -602,7 +626,6 @@ function InvestmentsStep({ onNext, onPrev, onSave }: InvestmentsStepProps): Reac
                       </span>
                     </div>
                     <div style={{ display: "flex", gap: "8px" }}>
-                      <button onClick={() => handleEditStart(t)} title="Edit" style={iconBtn}><PencilIcon /></button>
                       <button onClick={() => handleDelete(t.id)} title="Delete" style={{ ...iconBtn, color: "#DC2626" }}><TrashIcon /></button>
                     </div>
                   </>
@@ -731,10 +754,6 @@ function FinancialPageImpl(): React.JSX.Element {
   }, [searchParams]);
 
   const stepIds = ["balance", "cashflow", "investments", "contracts"];
-
-  const handleTabClick = (tabId: string): void => {
-    if (tabId === "financial") return;
-  };
 
   const goToStep = (id: string): void => setStep(id);
 

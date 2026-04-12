@@ -2,6 +2,8 @@
 
 import { useState, useRef, useCallback, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import axios from "axios";
+import toast from "react-hot-toast";
 import {
   listEmployeesAction,
   addEmployeeAction,
@@ -295,6 +297,7 @@ function HRRecordsValidationImpl() {
   const [modalStep, setModalStep] = useState<"choose" | "manual" | "rtw">("choose");
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState("");
+  const [isExtracting, setIsExtracting] = useState(false);
 
   const [manualForm, setManualForm] = useState<ManualForm>({ name: "", nationality: "British", startDate: "" });
   const [rtwForm, setRtwForm] = useState<RTWForm>({
@@ -482,6 +485,13 @@ function HRRecordsValidationImpl() {
     setShowModal(true);
   };
 
+  const markStaffComplete = () => {
+    try {
+      const p = JSON.parse(sessionStorage.getItem("hr_progress") || "{}");
+      sessionStorage.setItem("hr_progress", JSON.stringify({ ...p, staff: true }));
+    } catch {}
+  };
+
   const staffComplete = employees.length > 0;
 
 
@@ -588,7 +598,7 @@ function HRRecordsValidationImpl() {
 
         {employees.length > 0 && (
           <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "20px" }}>
-            <button onClick={() => router.push(`/employer/sections/rtw-compliance?recordId=${hrRecordId}`)}
+            <button onClick={() => { markStaffComplete(); router.push(`/employer/sections/rtw-compliance?recordId=${hrRecordId}`); }}
               style={{ backgroundColor: "#0852C9", color: "white", border: "none", borderRadius: "8px", padding: "12px 26px", fontSize: "14px", fontWeight: "600", cursor: "pointer" }}>
               Proceed to Validation Workflows →
             </button>
@@ -656,12 +666,45 @@ function HRRecordsValidationImpl() {
                 </div>
                 <div style={{ marginBottom: "14px" }}>
                   <label style={lbl}>Upload RTW Document *</label>
-                  {/* ← UPDATED: onFileChange now receives (file, url, key) */}
                   <RTWUploadArea
-                    onFileChange={(f, url, key) =>
-                      setRtwForm((prev) => ({ ...prev, file: f, fileUrl: url || "", fileKey: key || "" }))
-                    }
+                    onFileChange={async (f, url, key) => {
+                      setRtwForm((prev) => ({ ...prev, file: f, fileUrl: url || "", fileKey: key || "" }));
+                      if (f && url) {
+                        setIsExtracting(true);
+                        const loadingToast = toast.loading("AI is extracting details...");
+                        try {
+                          const formData = new FormData();
+                          formData.append("file", f);
+                          const res = await axios.post("/api/extract-rtw", formData);
+                          if (res.data.success) {
+                            const { employee_name, nationality, visa_expiry_date, reference_number } = res.data.extracted;
+                            setRtwForm(prev => ({
+                              ...prev,
+                              name: employee_name || prev.name,
+                              nationality: nationality || prev.nationality,
+                              expiryDate: visa_expiry_date || prev.expiryDate,
+                              documentNumber: reference_number || prev.documentNumber,
+                            }));
+                            if (res.data.extracted.name_extraction_failed) {
+                              toast.error("Name could not be extracted automatically. Please enter manually.");
+                            } else {
+                              toast.success("Details extracted successfully!");
+                            }
+                          }
+                        } catch (err) {
+                          console.error("Extraction error in modal:", err);
+                        } finally {
+                          setIsExtracting(false);
+                          toast.dismiss(loadingToast);
+                        }
+                      }
+                    }}
                   />
+                  {isExtracting && (
+                    <div style={{ display: "flex", alignItems: "center", gap: "8px", marginTop: "8px", fontSize: "12px", color: "#0852C9" }}>
+                      <SpinnerIcon /> Analyzing document...
+                    </div>
+                  )}
                 </div>
                 <div style={{ marginBottom: "14px" }}>
                   <label style={lbl}>Employee Full Name *</label>

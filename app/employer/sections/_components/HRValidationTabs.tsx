@@ -65,6 +65,17 @@ export default function HRValidationTabs({
   }, []);
 
   const isTabUnlocked = (tabId: string): boolean => {
+    // Basic indices
+    const tabIndices: Record<string, number> = {};
+    TABS.forEach((t, i) => { tabIndices[t.id] = i; });
+    
+    const currentIndex = tabIndices[currentTabId] ?? 0;
+    const targetIndex = tabIndices[tabId] ?? 0;
+
+    // RULE 0: Always allow going back to previous steps
+    if (targetIndex < currentIndex) return true;
+
+    // RULE 1: Company is always step 0
     if (tabId === "company") return true;
     
     // Check if company name is set in sessionStorage
