@@ -1,7 +1,9 @@
 'use client';
 
-import { useState, useEffect, Suspense } from "react";
+import { useState, useEffect, Suspense, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import axios from "axios";
+import toast from "react-hot-toast";
 import HRValidationTabs from "../_components/HRValidationTabs";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -186,6 +188,12 @@ const ArrowDownRed = (): React.JSX.Element => (
 );
 
 
+const CloudIcon = (): React.JSX.Element => (
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M17.5 19L19 19C21.2091 19 23 17.2091 23 15C23 12.7909 21.2091 11 19 11C18.8296 11 18.6625 11.0107 18.4988 11.0317C17.7412 8.14811 15.1182 6 12 6C9.11584 6 6.6247 7.8258 5.67232 10.3957C3.12061 10.7483 1 12.9163 1 15.5C1 18.5376 3.46243 21 6.5 21L8 21" />
+    <path d="M12 11V21M12 11L9 14M12 11L15 14" />
+  </svg>
+);
 
 // ─── StepPills ────────────────────────────────────────────────────────────────
 
@@ -357,6 +365,54 @@ function InvestmentsStep({ onNext, onPrev, onSave }: InvestmentsStepProps): Reac
   const [reference, setReference] = useState<string>("");
   const [type, setType] = useState<"incoming" | "outgoing">("incoming");
   const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [isParsing, setIsParsing] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const formData = new FormData();
+    formData.append("file", file);
+    formData.append("use_ocr", "false");
+
+    setIsParsing(true);
+    const loadingToast = toast.loading("Parsing bank statement...");
+
+    try {
+      const response = await axios.post("/api/extract-bank-statement", formData);
+
+      // Matches the structure in the Postman screenshot: { "status": "success", "data": { "transactions": [...] } }
+      const extractionResult = response.data.data || {};
+      const incoming = extractionResult.transactions || [];
+      
+      const mapped: Transaction[] = incoming.map((t: any, idx: number) => ({
+        id: Date.now() + idx,
+        amount: Math.abs(t.amount || 0),
+        reference: t.description || t.reference || "Unknown",
+        type: (t.amount > 0 || t.type === "credit") ? "incoming" : "outgoing",
+        status: getTransactionStatus(t.description || t.reference || ""),
+      }));
+
+      // In this step, we typically only care about LARGE transactions (>= 2000)
+      const largeOnly = mapped.filter(t => t.amount >= 2000);
+
+      if (largeOnly.length === 0) {
+        toast.success("Parsed, but no transactions ≥ £2,000 found.");
+      } else {
+        setTransactions(prev => [...prev, ...largeOnly]);
+        toast.success(`Successfully parsed ${largeOnly.length} large transactions!`);
+      }
+    } catch (error: any) {
+      console.error("Upload error:", error);
+      const errorMsg = error.response?.data?.details || "Failed to parse bank statement.";
+      toast.error(errorMsg);
+    } finally {
+      setIsParsing(false);
+      toast.dismiss(loadingToast);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  };
 
   const handleAdd = (): void => {
     const num = parseFloat(amount);
@@ -369,11 +425,45 @@ function InvestmentsStep({ onNext, onPrev, onSave }: InvestmentsStepProps): Reac
 
   return (
     <div style={{ backgroundColor: "white", borderRadius: "10px", border: "1px solid #E2E8F0", padding: "28px 30px" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "6px" }}>
-        <DollarIcon />
-        <h3 style={{ margin: 0, fontSize: "18px", fontWeight: "700", color: "#0F172A" }}>Step 3: Large Transaction / Investment Check</h3>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "6px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+          <DollarIcon />
+          <h3 style={{ margin: 0, fontSize: "18px", fontWeight: "700", color: "#0F172A" }}>Step 3: Large Transaction / Investment Check</h3>
+        </div>
+
+        {/* Upload Button */}
+        <div>
+          <input
+            type="file"
+            accept=".pdf"
+            ref={fileInputRef}
+            onChange={handleFileUpload}
+            style={{ display: "none" }}
+          />
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            disabled={isParsing}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "8px",
+              padding: "8px 16px",
+              backgroundColor: "#F0F9FF",
+              border: "1.5px solid #0EA5E9",
+              borderRadius: "8px",
+              color: "#0369A1",
+              fontSize: "13.5px",
+              fontWeight: "600",
+              cursor: isParsing ? "not-allowed" : "pointer",
+              transition: "all 0.2s"
+            }}
+          >
+            {isParsing ? <SpinnerIcon color="#0EA5E9" /> : <CloudIcon />}
+            {isParsing ? "Analyzing..." : "Upload Bank Statement"}
+          </button>
+        </div>
       </div>
-      <p style={{ margin: "0 0 18px", fontSize: "13px", color: "#64748B" }}>Transactions ≥ £2,000 require reference verification</p>
+      <p style={{ margin: "0 0 18px", fontSize: "13px", color: "#64748B" }}>Transactions ≥ £2,000 require reference verification. You can upload a PDF to auto-populate high-value items.</p>
 
       {/* Rules box */}
       <div style={{ backgroundColor: "#F8FAFC", borderRadius: "8px", border: "1px solid #E2E8F0", padding: "14px 18px", marginBottom: "18px" }}>
@@ -389,7 +479,7 @@ function InvestmentsStep({ onNext, onPrev, onSave }: InvestmentsStepProps): Reac
 
       {/* Add transaction */}
       <div style={{ backgroundColor: "#F8FAFC", borderRadius: "8px", border: "1px solid #E2E8F0", padding: "16px 18px", marginBottom: "18px" }}>
-        <p style={{ margin: "0 0 12px", fontSize: "13.5px", fontWeight: "600", color: "#0F172A" }}>Add Large Transaction</p>
+        <p style={{ margin: "0 0 12px", fontSize: "13.5px", fontWeight: "600", color: "#0F172A" }}>Add Large Transaction Manually</p>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr auto", gap: "12px", alignItems: "end" }}>
           <div>
             <label style={lbl}>Amount (£)</label>

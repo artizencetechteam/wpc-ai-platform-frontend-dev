@@ -183,6 +183,7 @@ export default function EmployerDashboard() {
   const [currentPage, setCurrentPage]   = useState(1);
   const [totalPages, setTotalPages]     = useState(1);
   const [expandedRow, setExpandedRow]   = useState<string | number | null>(null);
+  const [timestamp, setTimestamp]       = useState<number | null>(null);
 
   const tabList: TabType[] = ['All', 'HR Validation', 'Post Compliance', 'Call Agents'];
 
@@ -264,6 +265,7 @@ export default function EmployerDashboard() {
 
     fetchStats();
     fetchTasks('All', 1);
+    setTimestamp(Date.now());
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -349,7 +351,7 @@ export default function EmployerDashboard() {
           className="bg-[#1A56DB] hover:bg-[#1648C4] text-white text-[12px] sm:text-[13px] font-medium px-3 sm:px-4 py-2 rounded-lg transition inline-block">
           + Post Compliance
         </Link>
-        <Link href={`./sections/company?action=new&t=${Date.now()}`}
+        <Link href={`./sections/company?action=new${timestamp ? `&t=${timestamp}` : ''}`}
           className="bg-[#1A56DB] hover:bg-[#1648C4] text-white text-[12px] sm:text-[13px] font-medium px-3 sm:px-4 py-2 rounded-lg transition inline-block">
           + HR Validation
         </Link>
