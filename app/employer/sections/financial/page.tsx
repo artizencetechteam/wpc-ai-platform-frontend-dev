@@ -374,7 +374,7 @@ function InvestmentsStep({ onNext, onPrev, onSave }: InvestmentsStepProps): Reac
 
     const formData = new FormData();
     formData.append("file", file);
-    formData.append("use_ocr", "false");
+    formData.append("use_ocr", "true");
 
     setIsParsing(true);
     const loadingToast = toast.loading("Parsing bank statement...");
@@ -382,17 +382,21 @@ function InvestmentsStep({ onNext, onPrev, onSave }: InvestmentsStepProps): Reac
     try {
       const response = await axios.post("/api/extract-bank-statement", formData);
 
-      // Matches the structure in the Postman screenshot: { "status": "success", "data": { "transactions": [...] } }
       const extractionResult = response.data.data || {};
       const incoming = extractionResult.transactions || [];
       
-      const mapped: Transaction[] = incoming.map((t: any, idx: number) => ({
-        id: Date.now() + idx,
-        amount: Math.abs(t.amount || 0),
-        reference: t.description || t.reference || "Unknown",
-        type: (t.amount > 0 || t.type === "credit") ? "incoming" : "outgoing",
-        status: getTransactionStatus(t.description || t.reference || ""),
-      }));
+      const mapped: Transaction[] = incoming.map((t: any, idx: number) => {
+        const amt = t.paid_out || t.paid_in || t.amount || 0;
+        const isIncoming = t.paid_in || t.type === "credit" || (t.amount > 0);
+        
+        return {
+          id: Date.now() + idx,
+          amount: Math.abs(amt),
+          reference: t.description || t.reference || "Unknown",
+          type: isIncoming ? "incoming" : "outgoing",
+          status: getTransactionStatus(t.description || t.reference || ""),
+        };
+      });
 
       // In this step, we typically only care about LARGE transactions (>= 2000)
       const largeOnly = mapped.filter(t => t.amount >= 2000);

@@ -5,7 +5,7 @@ export async function POST(req: Request) {
     const formData = await req.formData();
     
     // Forward to the external API
-    const response = await fetch("https://bank-statement-wmfa.onrender.com/bank_statement_extraction", {
+    const response = await fetch("https://banklllm.onrender.com/bank_statement_extraction_upload", {
       method: "POST",
       body: formData,
     });
