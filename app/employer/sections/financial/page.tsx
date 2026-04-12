@@ -195,6 +195,30 @@ const CloudIcon = (): React.JSX.Element => (
   </svg>
 );
 
+const TrashIcon = (): React.JSX.Element => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2M10 11v6M14 11v6" />
+  </svg>
+);
+
+const PencilIcon = (): React.JSX.Element => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M17 3a2.828 2.828 0 114 4L7.5 20.5 2 22l1.5-5.5L17 3z" />
+  </svg>
+);
+
+const CheckIcon = (): React.JSX.Element => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <polyline points="20 6 9 17 4 12" />
+  </svg>
+);
+
+const XIcon = (): React.JSX.Element => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+  </svg>
+);
+
 // ─── StepPills ────────────────────────────────────────────────────────────────
 
 function StepPills({ active, onStepClick, unlockedUpTo }: StepPillsProps): React.JSX.Element {
@@ -368,6 +392,10 @@ function InvestmentsStep({ onNext, onPrev, onSave }: InvestmentsStepProps): Reac
   const [isParsing, setIsParsing] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Editing state
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [editValues, setEditValues] = useState<Transaction | null>(null);
+
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -423,6 +451,33 @@ function InvestmentsStep({ onNext, onPrev, onSave }: InvestmentsStepProps): Reac
     if (!amount || isNaN(num) || num < 2000 || !reference.trim()) return;
     setTransactions((prev) => [...prev, { id: Date.now(), amount: num, reference: reference.trim(), type, status: getTransactionStatus(reference) }]);
     setAmount(""); setReference(""); setType("incoming");
+  };
+
+  const handleDelete = (id: number): void => {
+    setTransactions(prev => prev.filter(t => t.id !== id));
+    toast.success("Transaction deleted");
+  };
+
+  const handleEditStart = (t: Transaction): void => {
+    setEditingId(t.id);
+    setEditValues({ ...t });
+  };
+
+  const handleEditSave = (): void => {
+    if (!editValues) return;
+    setTransactions(prev => prev.map(t => 
+      t.id === editingId 
+        ? { ...editValues, status: getTransactionStatus(editValues.reference) } 
+        : t
+    ));
+    setEditingId(null);
+    setEditValues(null);
+    toast.success("Transaction updated");
+  };
+
+  const handleEditCancel = (): void => {
+    setEditingId(null);
+    setEditValues(null);
   };
 
   const handleNext = (): void => { onSave({ transactions }); onNext(); };
@@ -512,22 +567,49 @@ function InvestmentsStep({ onNext, onPrev, onSave }: InvestmentsStepProps): Reac
       {/* Transactions table */}
       {transactions.length > 0 && (
         <div style={{ marginBottom: "18px" }}>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 2fr 1fr", padding: "8px 4px", borderBottom: "1px solid #E2E8F0" }}>
-            {["Amount", "Type", "Reference", "Status"].map((h) => <div key={h} style={{ fontSize: "12.5px", color: "#94A3B8", fontWeight: "500" }}>{h}</div>)}
+          <div style={{ display: "grid", gridTemplateColumns: "1.2fr 1fr 2fr 1fr 1fr", padding: "8px 4px", borderBottom: "1px solid #E2E8F0" }}>
+            {["Amount", "Type", "Reference", "Status", "Actions"].map((h) => <div key={h} style={{ fontSize: "12.5px", color: "#94A3B8", fontWeight: "500" }}>{h}</div>)}
           </div>
-          {transactions.map((t) => (
-            <div key={t.id} style={{ display: "grid", gridTemplateColumns: "1fr 1fr 2fr 1fr", padding: "12px 4px", borderBottom: "1px solid #F1F5F9", alignItems: "center" }}>
-              <div style={{ fontSize: "14px", color: "#0F172A", fontWeight: "500" }}>£{t.amount.toLocaleString()}</div>
-              <div style={{ fontSize: "13.5px", color: "#374151", textTransform: "capitalize" }}>{t.type}</div>
-              <div style={{ fontSize: "13.5px", color: "#374151" }}>{t.reference}</div>
-              <div>
-                <span style={{ display: "inline-flex", alignItems: "center", gap: "5px", padding: "3px 12px", borderRadius: "20px", fontSize: "12px", fontWeight: "600", backgroundColor: t.status === "ok" ? "#0852C9" : "#DC2626", color: "white" }}>
-                  <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><circle cx="5" cy="5" r="4" stroke="white" strokeWidth="1.2" fill="none" />{t.status === "ok" ? <path d="M3 5l1.5 1.5L7 3.5" stroke="white" strokeWidth="1.2" strokeLinecap="round" /> : <path d="M3.5 3.5l3 3M6.5 3.5l-3 3" stroke="white" strokeWidth="1.2" strokeLinecap="round" />}</svg>
-                  {t.status === "ok" ? "OK" : "Flag"}
-                </span>
+          {transactions.map((t) => {
+            const isEditing = editingId === t.id;
+            return (
+              <div key={t.id} style={{ display: "grid", gridTemplateColumns: "1.2fr 1fr 2fr 1fr 1fr", padding: "12px 4px", borderBottom: "1px solid #F1F5F9", alignItems: "center" }}>
+                {isEditing ? (
+                  <>
+                    <div><input type="number" value={editValues?.amount} onChange={(e) => setEditValues(prev => prev ? { ...prev, amount: parseFloat(e.target.value) || 0 } : null)} style={{ ...inputStyle, padding: "4px 8px" }} /></div>
+                    <div>
+                      <select value={editValues?.type} onChange={(e) => setEditValues(prev => prev ? { ...prev, type: e.target.value as "incoming" | "outgoing" } : null)} style={{ ...inputStyle, padding: "4px 8px" }}>
+                        <option value="incoming">Incoming</option>
+                        <option value="outgoing">Outgoing</option>
+                      </select>
+                    </div>
+                    <div><input type="text" value={editValues?.reference} onChange={(e) => setEditValues(prev => prev ? { ...prev, reference: e.target.value } : null)} style={{ ...inputStyle, padding: "4px 8px" }} /></div>
+                    <div />
+                    <div style={{ display: "flex", gap: "8px" }}>
+                      <button onClick={handleEditSave} title="Save" style={iconBtn}><CheckIcon /></button>
+                      <button onClick={handleEditCancel} title="Cancel" style={iconBtn}><XIcon /></button>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div style={{ fontSize: "14px", color: "#0F172A", fontWeight: "500" }}>£{t.amount.toLocaleString()}</div>
+                    <div style={{ fontSize: "13.5px", color: "#374151", textTransform: "capitalize" }}>{t.type}</div>
+                    <div style={{ fontSize: "13.5px", color: "#374151" }}>{t.reference}</div>
+                    <div>
+                      <span style={{ display: "inline-flex", alignItems: "center", gap: "5px", padding: "3px 12px", borderRadius: "20px", fontSize: "12px", fontWeight: "600", backgroundColor: t.status === "ok" ? "#0852C9" : "#DC2626", color: "white" }}>
+                        <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><circle cx="5" cy="5" r="4" stroke="white" strokeWidth="1.2" fill="none" />{t.status === "ok" ? <path d="M3 5l1.5 1.5L7 3.5" stroke="white" strokeWidth="1.2" strokeLinecap="round" /> : <path d="M3.5 3.5l3 3M6.5 3.5l-3 3" stroke="white" strokeWidth="1.2" strokeLinecap="round" />}</svg>
+                        {t.status === "ok" ? "OK" : "Flag"}
+                      </span>
+                    </div>
+                    <div style={{ display: "flex", gap: "8px" }}>
+                      <button onClick={() => handleEditStart(t)} title="Edit" style={iconBtn}><PencilIcon /></button>
+                      <button onClick={() => handleDelete(t.id)} title="Delete" style={{ ...iconBtn, color: "#DC2626" }}><TrashIcon /></button>
+                    </div>
+                  </>
+                )}
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
 
@@ -707,3 +789,4 @@ const lbl: React.CSSProperties = { display: "block", fontSize: "13px", fontWeigh
 const inputStyle: React.CSSProperties = { width: "100%", padding: "10px 12px", borderRadius: "8px", border: "1.5px solid #0852C9", fontSize: "14px", outline: "none", boxSizing: "border-box", color: "#0F172A", backgroundColor: "white" };
 const primaryBtn: React.CSSProperties = { padding: "13px 20px", borderRadius: "8px", border: "none", backgroundColor: "#0852C9", color: "white", fontSize: "14px", fontWeight: "600" };
 const backBtn: React.CSSProperties = { padding: "10px 20px", backgroundColor: "white", color: "#374151", border: "1.5px solid #D1D5DB", borderRadius: "8px", fontSize: "14px", fontWeight: "500", cursor: "pointer" };
+const iconBtn: React.CSSProperties = { display: "flex", alignItems: "center", justifyContent: "center", padding: "6px", backgroundColor: "transparent", border: "none", cursor: "pointer", color: "#64748B", transition: "color 0.2s" };
