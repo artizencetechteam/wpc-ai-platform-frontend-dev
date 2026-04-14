@@ -711,7 +711,7 @@ function HRRecordsValidationImpl() {
                   <input type="text" value={rtwForm.name} onChange={(e) => setRtwForm({ ...rtwForm, name: e.target.value })} placeholder="Enter full name" style={inputStyle} />
                 </div>
                 <div style={{ marginBottom: "14px" }}>
-                  <label style={lbl}>Nationality (extracted from document)</label>
+                  <label style={lbl}>Nationality</label>
                   <input type="text" value={rtwForm.nationality} onChange={(e) => setRtwForm({ ...rtwForm, nationality: e.target.value })} placeholder="e.g. Migrant, British" style={inputStyle} />
                 </div>
                 <div style={{ marginBottom: "22px" }}>
