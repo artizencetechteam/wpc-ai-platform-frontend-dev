@@ -4,7 +4,7 @@ import { cookies } from "next/headers";
 import axios from "axios";
 
 const API_URL =
-  process.env.NEXT_PUBLIC_API_URL || "http://37.27.113.235:6767/";
+  (process.env.NEXT_PUBLIC_API_URL || "http://37.27.113.235:6767").replace(/\/$/, '') + '/';
 
 type AuthResponse = Record<string, any>;
 

@@ -66,7 +66,7 @@ const ResultBadge = ({ result }: { result: string }) => {
 
 const SkeletonRow = () => (
   <tr className="border-b border-gray-50 animate-pulse">
-    {[...Array(7)].map((_, i) => (
+    {[...Array(8)].map((_, i) => (
       <td key={i} className="px-4 py-3">
         <div className="h-3 bg-gray-100 rounded w-24" />
       </td>
@@ -87,7 +87,7 @@ const EmployeeExpandedRow = ({
     return (
       <tr>
         <td
-          colSpan={7}
+          colSpan={8}
           className="px-6 py-4 bg-blue-50/30 text-[12px] text-[#9CA3AF] border-b border-gray-100"
         >
           No employees added to Record #{recordId} yet.
@@ -98,7 +98,7 @@ const EmployeeExpandedRow = ({
 
   return (
     <tr>
-      <td colSpan={7} className="px-6 py-5 bg-blue-50/30 border-b border-gray-100">
+      <td colSpan={8} className="px-6 py-5 bg-blue-50/30 border-b border-gray-100">
         <p className="text-[12px] font-semibold text-[#374151] mb-3">
           Employees in Record #{recordId} — {employees.length} total
         </p>
@@ -397,6 +397,7 @@ export default function EmployerDashboard() {
                   <th className="px-3 sm:px-4 py-3 font-medium">Type</th>
                   {/* FIX: was rendering status here instead of dateCreated */}
                   <th className="px-3 sm:px-4 py-3 font-medium">Date Created</th>
+                  <th className="px-3 sm:px-4 py-3 font-medium">Company / Client Name</th>
                   <th className="px-3 sm:px-4 py-3 font-medium">Status</th>
                   <th className="px-3 sm:px-4 py-3 font-medium">Result</th>
                   <th className="px-3 sm:px-4 py-3 font-medium">Employees</th>
@@ -408,7 +409,7 @@ export default function EmployerDashboard() {
                   [...Array(4)].map((_, i) => <SkeletonRow key={i} />)
                 ) : tasks.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="text-center py-10 text-[#9CA3AF] text-[13px]">
+                    <td colSpan={8} className="text-center py-10 text-[#9CA3AF] text-[13px]">
                       No tasks found for{' '}
                       <span className="font-semibold text-[#6B7280]">{activeTab}</span>
                     </td>
@@ -433,6 +434,9 @@ export default function EmployerDashboard() {
                         {/* FIX: was showing task.status here — now correctly shows task.dateCreated */}
                         <td className="px-3 sm:px-4 py-3 text-[#4B5563]">
                           {task.dateCreated}
+                        </td>
+                        <td className="px-3 sm:px-4 py-3 text-[#4B5563]">
+                          {task.companyName || 'N/A'}
                         </td>
                         {/* FIX: was showing task.result here — now correctly shows task.status */}
                         <td className="px-3 sm:px-4 py-3 capitalize text-[#4B5563]">

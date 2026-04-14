@@ -2,7 +2,7 @@
 
 import { cookies } from 'next/headers';
 
-const BASE_URL = 'http://37.27.113.235:6767';
+const BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://37.27.113.235:6767';
 
 // ─── Token helpers ────────────────────────────────────────────────────────────
 
@@ -117,6 +117,7 @@ export type TaskItem = {
   dateCreated: string;
   status: string;
   result: string;
+  companyName?: string;
   employeeCount?: number;
   employees?: Employee[];
 };
@@ -335,6 +336,7 @@ export async function getAllTasksAction(
         id: r.id,
         type: 'HR Validation',
         dateCreated: resolveDateCreated(r, employees),
+        companyName: r.company_name || r.client_name || r.Company || r.business_name || 'N/A',
         status: r.status ?? 'Pending',
         result: statusToResult(r.status),
         employeeCount: employees.length,

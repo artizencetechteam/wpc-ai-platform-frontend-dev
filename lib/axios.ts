@@ -52,7 +52,7 @@ const isTokenExpired = (token: string): boolean => {
 ============================================ */
 
 const clientApi = axios.create({
-  baseURL: "http://37.27.113.235:6767",   // 👈 YOUR API SERVER
+  baseURL: process.env.NEXT_PUBLIC_API_URL,   // 👈 YOUR API SERVER
   withCredentials: true,
   headers: {
     "Content-Type": "application/json"
@@ -95,7 +95,7 @@ clientApi.interceptors.request.use(
         try {
 
           const refreshResponse = await axios.post(
-            "http://37.27.113.235:6767/api/auth/refresh/",
+            `${process.env.NEXT_PUBLIC_API_URL}/api/auth/refresh/`,
             { refresh: refreshToken }
           );
 
@@ -160,7 +160,7 @@ clientApi.interceptors.response.use(
         if (!refreshToken) throw new Error("No refresh token");
 
         const refreshResponse = await axios.post(
-          "http://37.27.113.235:6767/api/auth/refresh/",
+          `${process.env.NEXT_PUBLIC_API_URL}/api/auth/refresh/`,
           { refresh: refreshToken }
         );
 
