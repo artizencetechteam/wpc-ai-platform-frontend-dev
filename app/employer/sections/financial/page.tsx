@@ -410,30 +410,45 @@ function InvestmentsStep({ onNext, onPrev, onSave }: InvestmentsStepProps): Reac
     try {
       const response = await axios.post("/api/extract-bank-statement", formData);
 
-      const extractionResult = response.data.data || {};
-      const incoming = extractionResult.transactions || [];
+      const resData = response.data;
+      // Handle different API response structures (e.g., { data: { transactions: [] } } or { transactions: [] })
+      const extractionResult = resData.data || resData || {};
+      const fetchedTransactions = extractionResult.transactions || [];
       
-      const mapped: Transaction[] = incoming.map((t: any, idx: number) => {
-        const amt = t.paid_out || t.paid_in || t.amount || 0;
-        const isIncoming = t.paid_in || t.type === "credit" || (t.amount > 0);
+      if (!Array.isArray(fetchedTransactions)) {
+        console.error("Fetched transactions is not an array:", fetchedTransactions);
+        toast.error("Invalid response format from bank statement parser.");
+        return;
+      }
+
+      const mapped: Transaction[] = fetchedTransactions.map((t: any, idx: number) => {
+        // Handle various field names for amount
+        const amtValue = t.paid_out || t.paid_in || t.amount || t.value || 0;
+        const amt = typeof amtValue === 'string' ? parseFloat(amtValue.replace(/[^\d.-]/g, '')) : amtValue;
+        
+        // Handle various field names for type/direction
+        const isIncoming = t.paid_in || t.type === "credit" || t.direction === "in" || (typeof amt === 'number' && amt > 0);
         
         return {
           id: Date.now() + idx,
-          amount: Math.abs(amt),
-          reference: t.description || t.reference || "Unknown",
+          amount: Math.abs(amt || 0),
+          reference: t.description || t.reference || t.memo || "Unknown",
           type: isIncoming ? "incoming" : "outgoing",
-          status: getTransactionStatus(t.description || t.reference || ""),
+          status: getTransactionStatus(t.description || t.reference || t.memo || ""),
         };
       });
 
-      // In this step, we typically only care about LARGE transactions (>= 2000)
-      const largeOnly = mapped.filter(t => t.amount >= 2000);
-
-      if (largeOnly.length === 0) {
-        toast.success("Parsed, but no transactions ≥ £2,000 found.");
+      if (mapped.length === 0) {
+        toast.success("Parsed, but no transactions found in the statement.");
       } else {
-        setTransactions(prev => [...prev, ...largeOnly]);
-        toast.success(`Successfully parsed ${largeOnly.length} large transactions!`);
+        setTransactions(prev => [...prev, ...mapped]);
+        
+        const largeCount = mapped.filter(t => t.amount >= 2000).length;
+        if (largeCount > 0) {
+          toast.success(`Successfully parsed ${mapped.length} transactions (${largeCount} high-value).`);
+        } else {
+          toast.success(`Successfully parsed ${mapped.length} transactions.`);
+        }
       }
     } catch (error: any) {
       console.error("Upload error:", error);
@@ -566,11 +581,12 @@ function InvestmentsStep({ onNext, onPrev, onSave }: InvestmentsStepProps): Reac
 
       {/* Transactions table */}
       {transactions.length > 0 && (
-        <div style={{ marginBottom: "18px" }}>
-          <div style={{ display: "grid", gridTemplateColumns: "1.2fr 1fr 2fr 1fr 1fr", padding: "8px 4px", borderBottom: "1px solid #E2E8F0" }}>
-            {["Amount", "Type", "Reference", "Status", "Actions"].map((h) => <div key={h} style={{ fontSize: "12.5px", color: "#94A3B8", fontWeight: "500" }}>{h}</div>)}
+        <div style={{ marginBottom: "18px", border: "1px solid #E2E8F0", borderRadius: "8px", overflow: "hidden" }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1.2fr 1fr 2fr 1fr 1fr", padding: "10px 14px", backgroundColor: "#F8FAFC", borderBottom: "1px solid #E2E8F0" }}>
+            {["Amount", "Type", "Reference", "Status", "Actions"].map((h) => <div key={h} style={{ fontSize: "12.5px", color: "#64748B", fontWeight: "600" }}>{h}</div>)}
           </div>
-          {transactions.map((t) => {
+          <div style={{ maxHeight: "400px", overflowY: "auto" }}>
+            {transactions.map((t) => {
             const isEditing = editingId === t.id;
             return (
               <div key={t.id} style={{ display: "grid", gridTemplateColumns: "1.2fr 1fr 2fr 1fr 1fr", padding: "12px 4px", borderBottom: "1px solid #F1F5F9", alignItems: "center" }}>
@@ -600,6 +616,20 @@ function InvestmentsStep({ onNext, onPrev, onSave }: InvestmentsStepProps): Reac
                       onMouseOut={(e) => e.currentTarget.style.backgroundColor = "transparent"}
                     >
                       £{t.amount.toLocaleString()}
+                      {t.amount >= 2000 && (
+                        <span style={{ 
+                          marginLeft: "8px", 
+                          fontSize: "10px", 
+                          backgroundColor: "#F0F9FF", 
+                          color: "#0369A1", 
+                          padding: "2px 6px", 
+                          borderRadius: "4px",
+                          border: "1px solid #B9E6FE",
+                          verticalAlign: "middle"
+                        }}>
+                          Large
+                        </span>
+                      )}
                     </div>
                     <div 
                       onClick={() => handleEditStart(t)} 
@@ -633,6 +663,7 @@ function InvestmentsStep({ onNext, onPrev, onSave }: InvestmentsStepProps): Reac
               </div>
             );
           })}
+          </div>
         </div>
       )}
 
