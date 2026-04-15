@@ -711,7 +711,7 @@ function HRRecordsValidationImpl() {
                   <input type="text" value={rtwForm.name} onChange={(e) => setRtwForm({ ...rtwForm, name: e.target.value })} placeholder="Enter full name" style={inputStyle} />
                 </div>
                 <div style={{ marginBottom: "14px" }}>
-                  <label style={lbl}>Nationality</label>
+                  <label style={lbl}>Immigration Status</label>
                   <input type="text" value={rtwForm.nationality} onChange={(e) => setRtwForm({ ...rtwForm, nationality: e.target.value })} placeholder="e.g. Migrant, British" style={inputStyle} />
                 </div>
                 <div style={{ marginBottom: "22px" }}>
@@ -739,7 +739,7 @@ function HRRecordsValidationImpl() {
                   <input type="text" value={manualForm.name} onChange={(e) => setManualForm({ ...manualForm, name: e.target.value })} placeholder="Enter full name" style={inputStyle} />
                 </div>
                 <div style={{ marginBottom: "14px" }}>
-                  <label style={lbl}>Nationality *</label>
+                  <label style={lbl}>Immigration Status</label>
                   <div style={{ position: "relative" }}>
                     <select value={manualForm.nationality} onChange={(e) => setManualForm({ ...manualForm, nationality: e.target.value })}
                       style={{ ...inputStyle, appearance: "none", paddingRight: "36px" }}>
