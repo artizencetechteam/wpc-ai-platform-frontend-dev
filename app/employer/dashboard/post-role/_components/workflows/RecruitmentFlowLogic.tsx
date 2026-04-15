@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { useAuditStore, AuditEmployee } from '@/app/store/auditStore';
-import { AlertTriangle, CheckCircle2, Info, DatePicker, Calendar, FileSearch, ShieldAlert } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Info, Calendar, FileSearch, ShieldAlert } from 'lucide-react';
 
 export default function RecruitmentFlowLogic() {
   const { employees } = useAuditStore();
