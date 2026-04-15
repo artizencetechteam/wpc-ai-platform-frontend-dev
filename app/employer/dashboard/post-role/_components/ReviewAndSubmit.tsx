@@ -3,7 +3,7 @@
 import React from 'react';
 import { CheckCircle, AlertTriangle, XCircle, ArrowRight } from 'lucide-react';
 
-const SummaryCard: React.FC<{ title: string; count: number; color: string; icon: React.ReactNode }> = ({ title, count, color, icon }) => {
+const SummaryCard: React.FC<{ title: string; count: number; color: 'green' | 'orange' | 'red'; icon: React.ReactNode }> = ({ title, count, color, icon }) => {
   const colorClasses = {
     green: 'border-green-500 bg-green-50',
     orange: 'border-orange-500 bg-orange-50',
