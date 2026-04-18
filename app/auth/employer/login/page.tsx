@@ -5,7 +5,6 @@ import { useForm } from 'react-hook-form';
 import Image from 'next/image';
 import { FiMail, FiLock, FiEye, FiEyeOff } from 'react-icons/fi';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
 import { loginAction } from '../../_action/auth.action';
 
 type LoginFormData = {
@@ -17,7 +16,6 @@ const LoginPage = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
-  const router = useRouter();
 
   const { register, handleSubmit, formState: { errors } } = useForm<LoginFormData>();
 
@@ -133,11 +131,11 @@ const LoginPage = () => {
             ) : 'Secure Login'}
           </button>
 
-          {/* <div className="flex items-center justify-between text-xs md:text-sm">
-            <Link href="/welcome/forgot-password" className="text-blue-600 hover:underline">
+          <div className="flex items-center justify-end text-xs md:text-sm">
+            <Link href="/auth/employer/forgot-password" className="text-blue-600 hover:underline font-medium">
               Forgot Password?
             </Link>
-          </div> */}
+          </div>
 
           <div className="text-center text-xs md:text-sm text-gray-600">
             Don't have an account?{' '}
