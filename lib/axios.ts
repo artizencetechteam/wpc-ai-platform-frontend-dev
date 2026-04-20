@@ -71,7 +71,10 @@ const isPublicRoute = () => {
   const publicRoutes = [
     "/welcome",
     "/welcome/forgot-password",
-    "/welcome/change-password"
+    "/welcome/change-password",
+    "/auth/employer/login",
+    "/auth/employer/register",
+    "/auth/employer/forgot-password"
   ];
 
   return publicRoutes.some(route => path.startsWith(route));

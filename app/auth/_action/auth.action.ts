@@ -374,3 +374,35 @@ export async function update_User_info() {
     return { success: false, message: "Failed to update user info" };
   }
 }
+
+type ForgotPasswordResult = {
+  success: boolean;
+  message: string;
+};
+
+export async function forgotPasswordAction(payload: {
+  email: string;
+}): Promise<ForgotPasswordResult> {
+  try {
+    const { data } = await axios.post(
+      `${API_URL}accounts/password/forgot/`,
+      {
+        email: payload.email,
+      },
+      {
+        timeout: 15000,
+        headers: { "Content-Type": "application/json" },
+      }
+    );
+
+    return {
+      success: true,
+      message: data?.message || "If your email is registered, a reset link has been sent.",
+    };
+  } catch (error: any) {
+    return {
+      success: false,
+      message: formatErrorMessage(getFirstError(error?.response?.data || error?.message || "Request failed")),
+    };
+  }
+}
