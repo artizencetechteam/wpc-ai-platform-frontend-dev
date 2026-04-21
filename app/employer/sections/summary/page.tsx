@@ -111,50 +111,117 @@ function SummaryPageImpl(): React.JSX.Element {
   const [progress, setProgress] = useState<Progress>({});
   const [recordId, setRecordId] = useState<string | null>(null);
 
+  // Dynamic data from other sections
+  const [companyName, setCompanyName] = useState<string>("");
+  const [financialData, setFinancialData] = useState<{
+    balance?: number;
+    incoming?: number;
+    outgoing?: number;
+    netCashFlow?: number;
+    paymentsReflected?: string | null;
+  }>({});
+  const [contracts, setContracts] = useState<Array<{ clientName?: string; exists?: string; aligns?: string }>>([]);
+  const [pensionData, setPensionData] = useState<{ companyRegistered?: string; eligibilityChecks?: Record<string, unknown> }>({});
+
   useEffect(() => {
     const queryId = searchParams.get("recordId") || searchParams.get("id");
     const id = queryId || sessionStorage.getItem("current_hr_record_id");
     setRecordId(id);
 
     try {
+      // Employees
       const e = sessionStorage.getItem("hr_employees");
       if (e) setEmployees(JSON.parse(e) as Employee[]);
+
+      // Progress flags
       const p = sessionStorage.getItem("hr_progress");
       if (p) setProgress(JSON.parse(p) as Progress);
+
+      // Company name
+      if (id) {
+        const savedName = sessionStorage.getItem(`company_name_${id}`);
+        if (savedName) setCompanyName(savedName);
+      }
+
+      // Financial data
+      const f = sessionStorage.getItem("hr_financial_data");
+      if (f) setFinancialData(JSON.parse(f));
+
+      // Contracts
+      const c = sessionStorage.getItem("hr_contracts");
+      if (c) setContracts(JSON.parse(c));
+
+      // Pension data
+      if (id) {
+        const pen = sessionStorage.getItem(`pension_data_${id}`);
+        if (pen) setPensionData(JSON.parse(pen));
+      }
     } catch {}
   }, [searchParams]);
 
-  const migrants = employees.filter((e) => !["british", "irish", "british/irish"].includes(e.nationality?.toLowerCase() || ""));
+  const migrants = employees.filter(
+    (e) => !["british", "irish", "british/irish"].includes(e.nationality?.toLowerCase() || "")
+  );
+
+  // --- Derived values for subtitles ---
+  const contractsPassed = contracts.filter(
+    (c) => c.exists === "yes" && c.aligns === "yes"
+  ).length;
+  const contractsTotal = contracts.length;
+
+  const balanceStr = financialData.balance != null
+    ? `Balance: £${financialData.balance.toLocaleString()}`
+    : "Balance: N/A";
+  const cashFlowStr =
+    financialData.netCashFlow != null
+      ? financialData.netCashFlow > 0 ? "Cash flow: Positive" : "Cash flow: Negative"
+      : "Cash flow: Not entered";
+  const financialSubtitle = `${balanceStr}, ${cashFlowStr}`;
+
+  const pensionRegistered = pensionData.companyRegistered;
+  const pensionSubtitle = pensionRegistered === "yes"
+    ? "Company registered, employee checks complete"
+    : pensionRegistered === "no"
+      ? "Company NOT registered with pension scheme"
+      : "Pension registration not confirmed";
+
+  const rtwSubtitle = migrants.length === 0
+    ? "No migrant workers — RTW checks skipped"
+    : `${migrants.length} migrant worker${migrants.length > 1 ? "s" : ""} — RTW verified`;
+
+  const contractsSubtitle = contractsTotal === 0
+    ? "No contracts added"
+    : `${contractsPassed}/${contractsTotal} contract${contractsTotal > 1 ? "s" : ""} validated`;
 
   const workflows: Workflow[] = [
     {
       key: "rtw",
       title: "RTW & Start Date Compliance",
-      subtitle: `${migrants.length}/0 migrant workers compliant`,
-      compliant: true,
+      subtitle: rtwSubtitle,
+      compliant: !!progress.rtw,
     },
     {
       key: "pension",
       title: "Pension Compliance",
-      subtitle: "Company registered, employee checks complete",
-      compliant: !!progress.rtw,
+      subtitle: pensionSubtitle,
+      compliant: !!progress.pension,
     },
     {
       key: "auth",
       title: "Authorising Officer",
-      subtitle: "irfan khan - Manager",
-      compliant: !!progress.pension,
+      subtitle: companyName ? `Validated for ${companyName}` : "Authorising Officer assessed",
+      compliant: !!progress.auth,
     },
     {
       key: "contracts",
       title: "Client Contracts",
-      subtitle: "1/2 contracts validated",
-      compliant: false,
+      subtitle: contractsSubtitle,
+      compliant: !!progress.contracts,
     },
     {
       key: "financial",
       title: "Financial Viability",
-      subtitle: "Balance: £78,312, Cash flow: Positive",
+      subtitle: financialSubtitle,
       compliant: !!progress.financial,
     },
   ];
@@ -168,15 +235,16 @@ function SummaryPageImpl(): React.JSX.Element {
     { label: "Migrants", value: migrants.length },
     { label: "Workflows Passed", value: passedCount },
     { label: "Issues Found", value: issuesCount },
-    { label: "Contracts", value: 2 },
+    { label: "Contracts", value: contractsTotal },
   ];
 
-  const handleTabClick = (tabId: string): void => {
-    // Shared component handles routing
-  };
-
   const handleStartNew = (): void => {
-    try { sessionStorage.removeItem("hr_employees"); sessionStorage.removeItem("hr_progress"); } catch {}
+    try {
+      sessionStorage.removeItem("hr_employees");
+      sessionStorage.removeItem("hr_progress");
+      sessionStorage.removeItem("hr_financial_data");
+      sessionStorage.removeItem("hr_contracts");
+    } catch {}
     router.push("/employer/sections/company");
   };
 
@@ -189,11 +257,18 @@ function SummaryPageImpl(): React.JSX.Element {
         {/* Header */}
         <div style={{ display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center", marginBottom: "28px" }}>
           {allCompliant ? <GreenCheckBig /> : <YellowWarnBig />}
-          <h2 style={{ margin: "14px 0 4px", fontSize: "22px", fontWeight: "700", color: "#0F172A" }}>
+          {companyName && (
+            <p style={{ margin: "8px 0 0", fontSize: "13px", fontWeight: "600", color: "#0852C9", letterSpacing: "0.3px" }}>
+              {companyName}
+            </p>
+          )}
+          <h2 style={{ margin: "10px 0 4px", fontSize: "22px", fontWeight: "700", color: "#0F172A" }}>
             {allCompliant ? "Validation Complete" : "Validation Complete with Issues"}
           </h2>
           <p style={{ margin: 0, fontSize: "13.5px", color: "#64748B" }}>
-            {allCompliant ? "All workflows passed. Your organisation is fully compliant." : "Some workflows require attention before full compliance."}
+            {allCompliant
+              ? "All workflows passed. Your organisation is fully compliant."
+              : "Some workflows require attention before full compliance."}
           </p>
         </div>
 
@@ -221,6 +296,40 @@ function SummaryPageImpl(): React.JSX.Element {
             ))}
           </div>
         </div>
+
+        {/* Financial highlight card (shown only if financial data exists) */}
+        {(financialData.balance != null || financialData.incoming != null) && (
+          <div style={{
+            backgroundColor: "white", borderRadius: "12px", border: "1px solid #E2E8F0",
+            padding: "18px 24px", marginBottom: "16px",
+            display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "12px",
+          }}>
+            {financialData.balance != null && (
+              <div style={{ textAlign: "center" }}>
+                <div style={{ fontSize: "11px", color: "#64748B", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: "4px" }}>Closing Balance</div>
+                <div style={{ fontSize: "20px", fontWeight: "700", color: financialData.balance >= 10425 ? "#16A34A" : "#DC2626" }}>
+                  £{financialData.balance.toLocaleString()}
+                </div>
+              </div>
+            )}
+            {financialData.incoming != null && (
+              <div style={{ textAlign: "center" }}>
+                <div style={{ fontSize: "11px", color: "#64748B", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: "4px" }}>Total Incoming</div>
+                <div style={{ fontSize: "20px", fontWeight: "700", color: "#166534" }}>
+                  £{financialData.incoming.toLocaleString()}
+                </div>
+              </div>
+            )}
+            {financialData.netCashFlow != null && (
+              <div style={{ textAlign: "center" }}>
+                <div style={{ fontSize: "11px", color: "#64748B", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: "4px" }}>Net Cash Flow</div>
+                <div style={{ fontSize: "20px", fontWeight: "700", color: financialData.netCashFlow >= 0 ? "#166534" : "#DC2626" }}>
+                  {financialData.netCashFlow >= 0 ? "+" : ""}£{Math.abs(financialData.netCashFlow).toLocaleString()}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Workflow results */}
         <div style={{ backgroundColor: "white", borderRadius: "12px", border: "1px solid #E2E8F0", padding: "20px 24px", marginBottom: "16px" }}>
@@ -283,9 +392,12 @@ function SummaryPageImpl(): React.JSX.Element {
                 </div>
                 <span style={{
                   padding: "4px 12px", borderRadius: "20px", fontSize: "12px", fontWeight: "600",
-                  backgroundColor: "#0852C9", color: "white",
+                  backgroundColor: !["british", "irish", "british/irish"].includes(emp.nationality?.toLowerCase() || "")
+                    ? "#7C3AED" : "#0852C9",
+                  color: "white",
                 }}>
-                  Pension Checked
+                  {!["british", "irish", "british/irish"].includes(emp.nationality?.toLowerCase() || "")
+                    ? "Migrant Worker" : "Pension Checked"}
                 </span>
               </div>
             ))

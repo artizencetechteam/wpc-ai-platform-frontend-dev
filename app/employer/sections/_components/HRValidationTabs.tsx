@@ -123,15 +123,9 @@ export default function HRValidationTabs({
           onClick={onBack || defaultBack} 
           style={{ background: "none", border: "none", cursor: "pointer", padding: "4px", display: "flex", alignItems: "center" }}
         >
-          {["company", "staff"].includes(currentTabId) ? (
-             <img src="/logo/main.png" alt="WPC AI" style={{ height: "32px", objectFit: "contain" }} />
-          ) : (
-            <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
-              <path d="M13 15L8 10L13 5" stroke="#374151" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-          )}
+          <img src="/logo/main.png" alt="WPC AI" style={{ height: "32px", objectFit: "contain" }} />
         </button>
-        <div style={{ marginLeft: currentTabId === "company" || currentTabId === "staff" ? "12px" : "0" }}>
+        <div style={{ marginLeft: "12px" }}>
           <h1 style={{ margin: 0, fontSize: "18px", fontWeight: "700", color: "#0F172A" }}>HR Records Validation</h1>
           <div style={{ fontSize: "11.5px", color: "#94A3B8", marginTop: "1px" }}>
             V.03{hrRecordId ? ` · Record #${hrRecordId}` : ""}
