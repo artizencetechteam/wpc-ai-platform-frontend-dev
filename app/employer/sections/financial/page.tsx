@@ -423,6 +423,10 @@ function InvestmentsStep({ onNext, onPrev, onSave, initialTransactions }: Invest
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editValues, setEditValues] = useState<Transaction | null>(null);
 
+  // Search state
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchField, setSearchField] = useState<"all" | "date" | "amount" | "type" | "reference">("all");
+
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -450,11 +454,25 @@ function InvestmentsStep({ onNext, onPrev, onSave, initialTransactions }: Invest
 
       const mapped: Transaction[] = fetchedTransactions.map((t: any, idx: number) => {
         // Handle various field names for amount
-        const amtValue = t.paid_out || t.paid_in || t.amount || t.value || 0;
+        const hasPaidOut = t.paid_out !== null && t.paid_out !== undefined && t.paid_out !== "" && String(t.paid_out).trim() !== "0";
+        const hasPaidIn = t.paid_in !== null && t.paid_in !== undefined && t.paid_in !== "" && String(t.paid_in).trim() !== "0";
+
+        const amtValue = hasPaidOut ? t.paid_out : (hasPaidIn ? t.paid_in : (t.amount || t.value || 0));
         const amt = typeof amtValue === 'string' ? parseFloat(amtValue.replace(/[^\d.-]/g, '')) : amtValue;
 
         // Handle various field names for type/direction
-        const isIncoming = t.paid_in || t.type === "credit" || t.direction === "in" || (typeof amt === 'number' && amt > 0);
+        let isIncoming = true;
+        if (hasPaidOut) {
+          isIncoming = false;
+        } else if (hasPaidIn) {
+          isIncoming = true;
+        } else if (t.type === "debit" || t.direction === "out") {
+          isIncoming = false;
+        } else if (t.type === "credit" || t.direction === "in") {
+          isIncoming = true;
+        } else if (typeof amt === 'number') {
+          isIncoming = amt >= 0;
+        }
 
         return {
           id: Date.now() + idx,
@@ -602,9 +620,37 @@ function InvestmentsStep({ onNext, onPrev, onSave, initialTransactions }: Invest
             </div>
           </div>
         </div>
-        <button onClick={handleAdd} style={{ marginTop: "12px", padding: "8px 16px", backgroundColor: "white", border: "1.5px solid #D1D5DB", borderRadius: "6px", fontSize: "13px", cursor: "pointer", color: "#374151" }}>
-          Add Transaction
-        </button>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "12px" }}>
+          <button onClick={handleAdd} style={{ padding: "8px 16px", backgroundColor: "white", border: "1.5px solid #D1D5DB", borderRadius: "6px", fontSize: "13px", cursor: "pointer", color: "#374151" }}>
+            Add Transaction
+          </button>
+          
+          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+            <select
+              value={searchField}
+              onChange={(e) => setSearchField(e.target.value as any)}
+              style={{ padding: "8px", border: "1.5px solid #E2E8F0", borderRadius: "6px", fontSize: "13px", outline: "none", backgroundColor: "white", color: "#374151" }}
+            >
+              <option value="all">All Fields</option>
+              <option value="date">Date</option>
+              <option value="amount">Amount</option>
+              <option value="type">Type</option>
+              <option value="reference">Reference / Note</option>
+            </select>
+            <div style={{ position: "relative" }}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#9CA3AF" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ position: "absolute", left: "10px", top: "50%", transform: "translateY(-50%)" }}>
+                <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+              </svg>
+              <input 
+                type="text" 
+                placeholder="Search transactions..." 
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                style={{ padding: "8px 12px 8px 30px", border: "1.5px solid #E2E8F0", borderRadius: "6px", fontSize: "13px", outline: "none", width: "220px" }}
+              />
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* Transactions table */}
@@ -614,7 +660,22 @@ function InvestmentsStep({ onNext, onPrev, onSave, initialTransactions }: Invest
             {["Date", "Amount", "Type", "Reference", "Status", "Actions"].map((h) => <div key={h} style={{ fontSize: "12.5px", color: "#64748B", fontWeight: "600" }}>{h}</div>)}
           </div>
           <div style={{ maxHeight: "400px", overflowY: "auto" }}>
-            {transactions.map((t) => {
+            {transactions.filter(t => {
+              const q = searchQuery.toLowerCase();
+              if (!q) return true;
+              if (searchField === "date") return t.date && t.date.toLowerCase().includes(q);
+              if (searchField === "amount") return String(t.amount).includes(q);
+              if (searchField === "type") return t.type.toLowerCase().includes(q);
+              if (searchField === "reference") return t.reference.toLowerCase().includes(q);
+              
+              // searchField === "all"
+              return (
+                t.reference.toLowerCase().includes(q) || 
+                String(t.amount).includes(q) || 
+                t.type.toLowerCase().includes(q) ||
+                (t.date && t.date.toLowerCase().includes(q))
+              );
+            }).map((t) => {
               const isEditing = editingId === t.id;
               return (
                 <div key={t.id} style={{ display: "grid", gridTemplateColumns: "1fr 1.2fr 1fr 2fr 1fr 1fr", padding: "12px 4px", borderBottom: "1px solid #F1F5F9", alignItems: "center" }}>
