@@ -99,8 +99,10 @@ function CompanyPageImpl() {
   const [uploadedFileName, setUploadedFileName] = useState("");
 
   const [transactions, setTransactions] = useState<any[]>([]);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [searchField, setSearchField] = useState<"all" | "date" | "amount" | "type" | "reference">("all");
+  const [searchDate, setSearchDate] = useState("");
+  const [searchAmount, setSearchAmount] = useState("");
+  const [searchType, setSearchType] = useState("");
+  const [searchReference, setSearchReference] = useState("");
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editValues, setEditValues] = useState<any | null>(null);
 
@@ -446,31 +448,32 @@ function CompanyPageImpl() {
 
             {transactions.length > 0 && (
               <div style={{ marginBottom: "24px" }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" }}>
+                <div style={{ display: "flex", flexDirection: "column", gap: "12px", marginBottom: "16px" }}>
                   <h3 style={{ margin: 0, fontSize: "15px", fontWeight: "600", color: "#0F172A" }}>Parsed Transactions</h3>
-                  <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                    <select
-                      value={searchField}
-                      onChange={(e) => setSearchField(e.target.value as any)}
-                      style={{ padding: "8px", border: "1.5px solid #E2E8F0", borderRadius: "6px", fontSize: "13px", outline: "none", backgroundColor: "white", color: "#374151" }}
-                    >
-                      <option value="all">All Fields</option>
-                      <option value="date">Date</option>
-                      <option value="amount">Amount</option>
-                      <option value="type">Type</option>
-                      <option value="reference">Reference / Note</option>
-                    </select>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: "10px" }}>
                     <div style={{ position: "relative" }}>
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#9CA3AF" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ position: "absolute", left: "10px", top: "50%", transform: "translateY(-50%)" }}>
                         <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
                       </svg>
-                      <input 
-                        type="text" 
-                        placeholder="Search transactions..." 
-                        value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
-                        style={{ padding: "8px 12px 8px 30px", border: "1.5px solid #E2E8F0", borderRadius: "6px", fontSize: "13px", outline: "none", width: "220px" }}
-                      />
+                      <input type="text" placeholder="Date..." value={searchDate} onChange={(e) => setSearchDate(e.target.value)} style={{ padding: "8px 12px 8px 30px", border: "1.5px solid #E2E8F0", borderRadius: "6px", fontSize: "13px", outline: "none", width: "100%", boxSizing: "border-box" }} />
+                    </div>
+                    <div style={{ position: "relative" }}>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#9CA3AF" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ position: "absolute", left: "10px", top: "50%", transform: "translateY(-50%)" }}>
+                        <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                      </svg>
+                      <input type="text" placeholder="Amount..." value={searchAmount} onChange={(e) => setSearchAmount(e.target.value)} style={{ padding: "8px 12px 8px 30px", border: "1.5px solid #E2E8F0", borderRadius: "6px", fontSize: "13px", outline: "none", width: "100%", boxSizing: "border-box" }} />
+                    </div>
+                    <div style={{ position: "relative" }}>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#9CA3AF" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ position: "absolute", left: "10px", top: "50%", transform: "translateY(-50%)" }}>
+                        <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                      </svg>
+                      <input type="text" placeholder="Type..." value={searchType} onChange={(e) => setSearchType(e.target.value)} style={{ padding: "8px 12px 8px 30px", border: "1.5px solid #E2E8F0", borderRadius: "6px", fontSize: "13px", outline: "none", width: "100%", boxSizing: "border-box" }} />
+                    </div>
+                    <div style={{ position: "relative" }}>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#9CA3AF" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ position: "absolute", left: "10px", top: "50%", transform: "translateY(-50%)" }}>
+                        <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                      </svg>
+                      <input type="text" placeholder="Reference / Note..." value={searchReference} onChange={(e) => setSearchReference(e.target.value)} style={{ padding: "8px 12px 8px 30px", border: "1.5px solid #E2E8F0", borderRadius: "6px", fontSize: "13px", outline: "none", width: "100%", boxSizing: "border-box" }} />
                     </div>
                   </div>
                 </div>
@@ -481,19 +484,11 @@ function CompanyPageImpl() {
                   </div>
                   <div style={{ maxHeight: "400px", overflowY: "auto" }}>
                     {transactions.filter(t => {
-                      const q = searchQuery.toLowerCase();
-                      if (!q) return true;
-                      if (searchField === "date") return t.date && t.date.toLowerCase().includes(q);
-                      if (searchField === "amount") return String(t.amount).includes(q);
-                      if (searchField === "type") return t.type.toLowerCase().includes(q);
-                      if (searchField === "reference") return t.reference.toLowerCase().includes(q);
-                      
-                      return (
-                        t.reference.toLowerCase().includes(q) || 
-                        String(t.amount).includes(q) || 
-                        t.type.toLowerCase().includes(q) ||
-                        (t.date && t.date.toLowerCase().includes(q))
-                      );
+                      if (searchDate && (!t.date || !t.date.toLowerCase().includes(searchDate.toLowerCase()))) return false;
+                      if (searchAmount && !String(t.amount).includes(searchAmount)) return false;
+                      if (searchType && !t.type.toLowerCase().includes(searchType.toLowerCase())) return false;
+                      if (searchReference && !t.reference.toLowerCase().includes(searchReference.toLowerCase())) return false;
+                      return true;
                     }).map((t) => {
                       const isEditing = editingId === t.id;
                       return (
