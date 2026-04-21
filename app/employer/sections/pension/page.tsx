@@ -58,6 +58,21 @@ const markComplete = (key: string) => {
   } catch {}
 };
 
+const getPensionData = (recordId: number | null) => {
+  try {
+    const key = `pension_data_${recordId ?? "default"}`;
+    return JSON.parse(sessionStorage.getItem(key) || "{}");
+  } catch { return {}; }
+};
+
+const savePensionData = (recordId: number | null, data: Record<string, unknown>) => {
+  try {
+    const key = `pension_data_${recordId ?? "default"}`;
+    const existing = getPensionData(recordId);
+    sessionStorage.setItem(key, JSON.stringify({ ...existing, ...data }));
+  } catch {}
+};
+
 
 
 type StepPillsProps = {
@@ -235,26 +250,26 @@ type Employee = {
 
 type EmployeeEligibilityStepProps = {
   employees: Employee[];
+  checks: Record<number, any>;
+  onChecksChange: (checks: Record<number, any>) => void;
   onComplete: () => void;
 };
 
 function EmployeeEligibilityStep({
   employees,
+  checks,
+  onChecksChange,
   onComplete,
 }: EmployeeEligibilityStepProps) {
 
-  const [checks, setChecks] = useState<Record<number, any>>({});
-
  const toggle = (empId: number, field: string) => {
-  setChecks((prev) => {
-    const current = prev[empId] || { age22: false, earnings10k: false, autoEnrolled: false, optedOut: false };
-    return {
-      ...prev,
-      [empId]: {
-        ...current,
-        [field]: !current[field],
-      },
-    };
+  const current = checks[empId] || { age22: false, earnings10k: false, autoEnrolled: false, optedOut: false };
+  onChecksChange({
+    ...checks,
+    [empId]: {
+      ...current,
+      [field]: !current[field],
+    },
   });
 };
 
@@ -379,17 +394,47 @@ function PensionComplianceImpl() {
   const [companyRegistered, setCompanyRegistered] = useState<string | null>(null);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [recordId, setRecordId] = useState<number | null>(null);
+  const [eligibilityChecks, setEligibilityChecks] = useState<Record<number, any>>({});
 
+  // Resolve recordId and restore saved pension state on mount
   useEffect(() => {
     const queryId = searchParams.get("recordId") || searchParams.get("id");
-    const id = queryId || sessionStorage.getItem("current_hr_record_id");
-    if (id) setRecordId(Number(id));
+    const rawId = queryId || sessionStorage.getItem("current_hr_record_id");
+    const resolvedId = rawId ? Number(rawId) : null;
+    if (resolvedId) setRecordId(resolvedId);
+
+    // Restore pension form state from sessionStorage
+    const saved = getPensionData(resolvedId);
+    if (saved.companyRegistered) setCompanyRegistered(saved.companyRegistered);
+    if (saved.step) setStep(saved.step as "company" | "eligibility");
+    if (saved.eligibilityChecks) setEligibilityChecks(saved.eligibilityChecks);
 
     try {
-      const saved = sessionStorage.getItem("hr_employees");
-      if (saved) setEmployees(JSON.parse(saved));
+      const savedEmps = sessionStorage.getItem("hr_employees");
+      if (savedEmps) setEmployees(JSON.parse(savedEmps));
     } catch {}
   }, [searchParams]);
+
+  // Persist companyRegistered whenever it changes
+  useEffect(() => {
+    if (recordId !== null || companyRegistered !== null) {
+      savePensionData(recordId, { companyRegistered });
+    }
+  }, [companyRegistered, recordId]);
+
+  // Persist step whenever it changes
+  useEffect(() => {
+    if (recordId !== null) {
+      savePensionData(recordId, { step });
+    }
+  }, [step, recordId]);
+
+  // Persist eligibility checks whenever they change
+  useEffect(() => {
+    if (recordId !== null) {
+      savePensionData(recordId, { eligibilityChecks });
+    }
+  }, [eligibilityChecks, recordId]);
 
   const handleTabClick = (tabId: string) => {
     if (tabId === "pension") return;
@@ -444,6 +489,8 @@ function PensionComplianceImpl() {
         ) : (
           <EmployeeEligibilityStep
             employees={employees}
+            checks={eligibilityChecks}
+            onChecksChange={setEligibilityChecks}
             onComplete={handleComplete}
           />
         )}

@@ -347,7 +347,7 @@ export default function EmployerDashboard() {
       {/* Quick Actions */}
       <div className="flex flex-wrap items-center gap-2 sm:gap-3 mb-6">
         <p className="text-[14px] font-semibold text-[#1D1D1D] w-full sm:w-auto">Quick Action</p>
-        <Link href="./components/post-compliance"
+        <Link href="/employer/dashboard/post-compliance"
           className="bg-[#1A56DB] hover:bg-[#1648C4] text-white text-[12px] sm:text-[13px] font-medium px-3 sm:px-4 py-2 rounded-lg transition inline-block">
           + Post Compliance
         </Link>
