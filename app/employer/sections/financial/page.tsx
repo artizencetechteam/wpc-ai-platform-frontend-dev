@@ -24,6 +24,7 @@ interface Progress {
 
 interface Transaction {
   id: number;
+  date?: string;
   amount: number;
   reference: string;
   type: "incoming" | "outgoing";
@@ -36,6 +37,8 @@ interface FinancialData {
   outgoing?: number;
   netCashFlow?: number;
   transactions?: Transaction[];
+  paymentsReflected?: string | null;
+  futureEngagement?: string | null;
 }
 
 interface SavedContract {
@@ -65,24 +68,31 @@ interface RadioRowProps {
 interface BalanceStepProps {
   onNext: () => void;
   onSave: (data: Partial<FinancialData>) => void;
+  initialBalance?: number;
 }
 
 interface CashFlowStepProps {
   onNext: () => void;
   onPrev: () => void;
   onSave: (data: Partial<FinancialData>) => void;
+  initialIncoming?: number;
+  initialOutgoing?: number;
 }
 
 interface InvestmentsStepProps {
   onNext: () => void;
   onPrev: () => void;
   onSave: (data: Partial<FinancialData>) => void;
+  initialTransactions?: Transaction[];
 }
 
 interface ContractsSyncStepProps {
   onComplete: () => void;
   onPrev: () => void;
   savedContracts: SavedContract[];
+  onSave: (data: Partial<FinancialData>) => void;
+  initialPaymentsReflected?: string | null;
+  initialFutureEngagement?: string | null;
 }
 
 // ─── Constants ───────────────────────────────────────────────────────────────
@@ -116,13 +126,30 @@ const markComplete = (key: string): void => {
   try {
     const p = JSON.parse(sessionStorage.getItem("hr_progress") || "{}");
     sessionStorage.setItem("hr_progress", JSON.stringify({ ...p, [key]: true }));
-  } catch {}
+  } catch { }
 };
 
 function getTransactionStatus(ref: string): "ok" | "fail" {
   const lower = (ref || "").toLowerCase();
   if (NON_COMPLIANT_REFS.some((r) => lower.includes(r))) return "fail";
   return "ok";
+}
+
+const MONTH_MAP: Record<string, string> = {
+  jan: "01", feb: "02", mar: "03", apr: "04", may: "05", jun: "06",
+  jul: "07", aug: "08", sep: "09", oct: "10", nov: "11", dec: "12",
+};
+
+function formatDate(raw: string | null | undefined): string {
+  if (!raw) return "";
+  // Expected format: "DD Mon YY" e.g. "16 Jan 26"
+  const parts = raw.trim().split(/\s+/);
+  if (parts.length !== 3) return raw;
+  const [dd, mon, yy] = parts;
+  const mm = MONTH_MAP[mon.toLowerCase()];
+  if (!mm) return raw;
+  const year = parseInt(yy, 10) + 2000;
+  return `${dd.padStart(2, "0")}-${mm}-${year}`;
 }
 
 // ─── Icons ───────────────────────────────────────────────────────────────────
@@ -273,8 +300,8 @@ function RadioRow({ value, selected, onChange, label, desc }: RadioRowProps): Re
 
 // ─── BalanceStep ──────────────────────────────────────────────────────────────
 
-function BalanceStep({ onNext, onSave }: BalanceStepProps): React.JSX.Element {
-  const [balance, setBalance] = useState<string>("");
+function BalanceStep({ onNext, onSave, initialBalance }: BalanceStepProps): React.JSX.Element {
+  const [balance, setBalance] = useState<string>(initialBalance != null ? String(initialBalance) : "");
   const num = parseFloat(balance);
   const isCompliant = !isNaN(num) && num >= MIN_BALANCE;
   const isInsufficient = !isNaN(num) && num < MIN_BALANCE && balance !== "";
@@ -325,9 +352,9 @@ function BalanceStep({ onNext, onSave }: BalanceStepProps): React.JSX.Element {
 
 // ─── CashFlowStep ─────────────────────────────────────────────────────────────
 
-function CashFlowStep({ onNext, onPrev, onSave }: CashFlowStepProps): React.JSX.Element {
-  const [incoming, setIncoming] = useState<string>("");
-  const [outgoing, setOutgoing] = useState<string>("");
+function CashFlowStep({ onNext, onPrev, onSave, initialIncoming, initialOutgoing }: CashFlowStepProps): React.JSX.Element {
+  const [incoming, setIncoming] = useState<string>(initialIncoming != null ? String(initialIncoming) : "");
+  const [outgoing, setOutgoing] = useState<string>(initialOutgoing != null ? String(initialOutgoing) : "");
   const inNum = parseFloat(incoming) || 0;
   const outNum = parseFloat(outgoing) || 0;
   const net = inNum - outNum;
@@ -384,11 +411,11 @@ function CashFlowStep({ onNext, onPrev, onSave }: CashFlowStepProps): React.JSX.
 
 // ─── InvestmentsStep ──────────────────────────────────────────────────────────
 
-function InvestmentsStep({ onNext, onPrev, onSave }: InvestmentsStepProps): React.JSX.Element {
+function InvestmentsStep({ onNext, onPrev, onSave, initialTransactions }: InvestmentsStepProps): React.JSX.Element {
   const [amount, setAmount] = useState<string>("");
   const [reference, setReference] = useState<string>("");
   const [type, setType] = useState<"incoming" | "outgoing">("incoming");
-  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [transactions, setTransactions] = useState<Transaction[]>(initialTransactions || []);
   const [isParsing, setIsParsing] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -414,7 +441,7 @@ function InvestmentsStep({ onNext, onPrev, onSave }: InvestmentsStepProps): Reac
       // Handle different API response structures (e.g., { data: { transactions: [] } } or { transactions: [] })
       const extractionResult = resData.data || resData || {};
       const fetchedTransactions = extractionResult.transactions || [];
-      
+
       if (!Array.isArray(fetchedTransactions)) {
         console.error("Fetched transactions is not an array:", fetchedTransactions);
         toast.error("Invalid response format from bank statement parser.");
@@ -425,12 +452,13 @@ function InvestmentsStep({ onNext, onPrev, onSave }: InvestmentsStepProps): Reac
         // Handle various field names for amount
         const amtValue = t.paid_out || t.paid_in || t.amount || t.value || 0;
         const amt = typeof amtValue === 'string' ? parseFloat(amtValue.replace(/[^\d.-]/g, '')) : amtValue;
-        
+
         // Handle various field names for type/direction
         const isIncoming = t.paid_in || t.type === "credit" || t.direction === "in" || (typeof amt === 'number' && amt > 0);
-        
+
         return {
           id: Date.now() + idx,
+          date: formatDate(t.date),
           amount: Math.abs(amt || 0),
           reference: t.description || t.reference || t.memo || "Unknown",
           type: isIncoming ? "incoming" : "outgoing",
@@ -442,7 +470,7 @@ function InvestmentsStep({ onNext, onPrev, onSave }: InvestmentsStepProps): Reac
         toast.success("Parsed, but no transactions found in the statement.");
       } else {
         setTransactions(prev => [...prev, ...mapped]);
-        
+
         const largeCount = mapped.filter(t => t.amount >= 2000).length;
         if (largeCount > 0) {
           toast.success(`Successfully parsed ${mapped.length} transactions (${largeCount} high-value).`);
@@ -480,9 +508,9 @@ function InvestmentsStep({ onNext, onPrev, onSave }: InvestmentsStepProps): Reac
 
   const handleEditSave = (): void => {
     if (!editValues) return;
-    setTransactions(prev => prev.map(t => 
-      t.id === editingId 
-        ? { ...editValues, status: getTransactionStatus(editValues.reference) } 
+    setTransactions(prev => prev.map(t =>
+      t.id === editingId
+        ? { ...editValues, status: getTransactionStatus(editValues.reference) }
         : t
     ));
     setEditingId(null);
@@ -582,87 +610,93 @@ function InvestmentsStep({ onNext, onPrev, onSave }: InvestmentsStepProps): Reac
       {/* Transactions table */}
       {transactions.length > 0 && (
         <div style={{ marginBottom: "18px", border: "1px solid #E2E8F0", borderRadius: "8px", overflow: "hidden" }}>
-          <div style={{ display: "grid", gridTemplateColumns: "1.2fr 1fr 2fr 1fr 1fr", padding: "10px 14px", backgroundColor: "#F8FAFC", borderBottom: "1px solid #E2E8F0" }}>
-            {["Amount", "Type", "Reference", "Status", "Actions"].map((h) => <div key={h} style={{ fontSize: "12.5px", color: "#64748B", fontWeight: "600" }}>{h}</div>)}
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1.2fr 1fr 2fr 1fr 1fr", padding: "10px 14px", backgroundColor: "#F8FAFC", borderBottom: "1px solid #E2E8F0" }}>
+            {["Date", "Amount", "Type", "Reference", "Status", "Actions"].map((h) => <div key={h} style={{ fontSize: "12.5px", color: "#64748B", fontWeight: "600" }}>{h}</div>)}
           </div>
           <div style={{ maxHeight: "400px", overflowY: "auto" }}>
             {transactions.map((t) => {
-            const isEditing = editingId === t.id;
-            return (
-              <div key={t.id} style={{ display: "grid", gridTemplateColumns: "1.2fr 1fr 2fr 1fr 1fr", padding: "12px 4px", borderBottom: "1px solid #F1F5F9", alignItems: "center" }}>
-                {isEditing ? (
-                  <>
-                    <div><input type="number" value={editValues?.amount} onChange={(e) => setEditValues(prev => prev ? { ...prev, amount: parseFloat(e.target.value) || 0 } : null)} style={{ ...inputStyle, padding: "4px 8px" }} /></div>
-                    <div>
-                      <select value={editValues?.type} onChange={(e) => setEditValues(prev => prev ? { ...prev, type: e.target.value as "incoming" | "outgoing" } : null)} style={{ ...inputStyle, padding: "4px 8px" }}>
-                        <option value="incoming">Incoming</option>
-                        <option value="outgoing">Outgoing</option>
-                      </select>
-                    </div>
-                    <div><input type="text" value={editValues?.reference} onChange={(e) => setEditValues(prev => prev ? { ...prev, reference: e.target.value } : null)} style={{ ...inputStyle, padding: "4px 8px" }} /></div>
-                    <div />
-                    <div style={{ display: "flex", gap: "8px" }}>
-                      <button onClick={handleEditSave} title="Save" style={iconBtn}><CheckIcon /></button>
-                      <button onClick={handleEditCancel} title="Cancel" style={iconBtn}><XIcon /></button>
-                    </div>
-                  </>
-                ) : (
-                  <>
-                    <div 
-                      onClick={() => handleEditStart(t)} 
-                      title="Click to edit"
-                      style={{ fontSize: "14px", color: "#0F172A", fontWeight: "500", cursor: "pointer", padding: "4px", borderRadius: "4px", transition: "background 0.2s" }}
-                      onMouseOver={(e) => e.currentTarget.style.backgroundColor = "#F1F5F9"}
-                      onMouseOut={(e) => e.currentTarget.style.backgroundColor = "transparent"}
-                    >
-                      £{t.amount.toLocaleString()}
-                      {t.amount >= 2000 && (
-                        <span style={{ 
-                          marginLeft: "8px", 
-                          fontSize: "10px", 
-                          backgroundColor: "#F0F9FF", 
-                          color: "#0369A1", 
-                          padding: "2px 6px", 
-                          borderRadius: "4px",
-                          border: "1px solid #B9E6FE",
-                          verticalAlign: "middle"
-                        }}>
-                          Large
+              const isEditing = editingId === t.id;
+              return (
+                <div key={t.id} style={{ display: "grid", gridTemplateColumns: "1fr 1.2fr 1fr 2fr 1fr 1fr", padding: "12px 4px", borderBottom: "1px solid #F1F5F9", alignItems: "center" }}>
+                  {isEditing ? (
+                    <>
+                      <div style={{ fontSize: "13px", color: "#374151", padding: "4px" }}>{editValues?.date || "—"}</div>
+                      <div><input type="number" value={editValues?.amount} onChange={(e) => setEditValues(prev => prev ? { ...prev, amount: parseFloat(e.target.value) || 0 } : null)} style={{ ...inputStyle, padding: "4px 8px" }} /></div>
+                      <div>
+                        <select value={editValues?.type} onChange={(e) => setEditValues(prev => prev ? { ...prev, type: e.target.value as "incoming" | "outgoing" } : null)} style={{ ...inputStyle, padding: "4px 8px" }}>
+                          <option value="incoming">Incoming</option>
+                          <option value="outgoing">Outgoing</option>
+                        </select>
+                      </div>
+                      <div><input type="text" value={editValues?.reference} onChange={(e) => setEditValues(prev => prev ? { ...prev, reference: e.target.value } : null)} style={{ ...inputStyle, padding: "4px 8px" }} /></div>
+                      <div />
+                      <div style={{ display: "flex", gap: "8px" }}>
+                        <button onClick={handleEditSave} title="Save" style={iconBtn}><CheckIcon /></button>
+                        <button onClick={handleEditCancel} title="Cancel" style={iconBtn}><XIcon /></button>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div
+                        style={{ fontSize: "13px", color: "#374151", padding: "4px", fontVariantNumeric: "tabular-nums" }}
+                      >
+                        {t.date || "—"}
+                      </div>
+                      <div
+                        onClick={() => handleEditStart(t)}
+                        title="Click to edit"
+                        style={{ fontSize: "14px", color: "#0F172A", fontWeight: "500", cursor: "pointer", padding: "4px", borderRadius: "4px", transition: "background 0.2s" }}
+                        onMouseOver={(e) => e.currentTarget.style.backgroundColor = "#F1F5F9"}
+                        onMouseOut={(e) => e.currentTarget.style.backgroundColor = "transparent"}
+                      >
+                        £{t.amount.toLocaleString()}
+                        {t.amount >= 2000 && (
+                          <span style={{
+                            marginLeft: "8px",
+                            fontSize: "10px",
+                            backgroundColor: "#F0F9FF",
+                            color: "#0369A1",
+                            padding: "2px 6px",
+                            borderRadius: "4px",
+                            border: "1px solid #B9E6FE",
+                            verticalAlign: "middle"
+                          }}>
+                            Large
+                          </span>
+                        )}
+                      </div>
+                      <div
+                        onClick={() => handleEditStart(t)}
+                        title="Click to edit"
+                        style={{ fontSize: "13.5px", color: "#374151", textTransform: "capitalize", cursor: "pointer", padding: "4px", borderRadius: "4px", transition: "background 0.2s" }}
+                        onMouseOver={(e) => e.currentTarget.style.backgroundColor = "#F1F5F9"}
+                        onMouseOut={(e) => e.currentTarget.style.backgroundColor = "transparent"}
+                      >
+                        {t.type}
+                      </div>
+                      <div
+                        onClick={() => handleEditStart(t)}
+                        title="Click to edit"
+                        style={{ fontSize: "13.5px", color: "#374151", cursor: "pointer", padding: "4px", borderRadius: "4px", transition: "background 0.2s" }}
+                        onMouseOver={(e) => e.currentTarget.style.backgroundColor = "#F1F5F9"}
+                        onMouseOut={(e) => e.currentTarget.style.backgroundColor = "transparent"}
+                      >
+                        {t.reference}
+                      </div>
+                      <div>
+                        <span style={{ display: "inline-flex", alignItems: "center", gap: "5px", padding: "3px 12px", borderRadius: "20px", fontSize: "12px", fontWeight: "600", backgroundColor: t.status === "ok" ? "#0852C9" : "#DC2626", color: "white" }}>
+                          <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><circle cx="5" cy="5" r="4" stroke="white" strokeWidth="1.2" fill="none" />{t.status === "ok" ? <path d="M3 5l1.5 1.5L7 3.5" stroke="white" strokeWidth="1.2" strokeLinecap="round" /> : <path d="M3.5 3.5l3 3M6.5 3.5l-3 3" stroke="white" strokeWidth="1.2" strokeLinecap="round" />}</svg>
+                          {t.status === "ok" ? "OK" : "Flag"}
                         </span>
-                      )}
-                    </div>
-                    <div 
-                      onClick={() => handleEditStart(t)} 
-                      title="Click to edit"
-                      style={{ fontSize: "13.5px", color: "#374151", textTransform: "capitalize", cursor: "pointer", padding: "4px", borderRadius: "4px", transition: "background 0.2s" }}
-                      onMouseOver={(e) => e.currentTarget.style.backgroundColor = "#F1F5F9"}
-                      onMouseOut={(e) => e.currentTarget.style.backgroundColor = "transparent"}
-                    >
-                      {t.type}
-                    </div>
-                    <div 
-                      onClick={() => handleEditStart(t)} 
-                      title="Click to edit"
-                      style={{ fontSize: "13.5px", color: "#374151", cursor: "pointer", padding: "4px", borderRadius: "4px", transition: "background 0.2s" }}
-                      onMouseOver={(e) => e.currentTarget.style.backgroundColor = "#F1F5F9"}
-                      onMouseOut={(e) => e.currentTarget.style.backgroundColor = "transparent"}
-                    >
-                      {t.reference}
-                    </div>
-                    <div>
-                      <span style={{ display: "inline-flex", alignItems: "center", gap: "5px", padding: "3px 12px", borderRadius: "20px", fontSize: "12px", fontWeight: "600", backgroundColor: t.status === "ok" ? "#0852C9" : "#DC2626", color: "white" }}>
-                        <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><circle cx="5" cy="5" r="4" stroke="white" strokeWidth="1.2" fill="none" />{t.status === "ok" ? <path d="M3 5l1.5 1.5L7 3.5" stroke="white" strokeWidth="1.2" strokeLinecap="round" /> : <path d="M3.5 3.5l3 3M6.5 3.5l-3 3" stroke="white" strokeWidth="1.2" strokeLinecap="round" />}</svg>
-                        {t.status === "ok" ? "OK" : "Flag"}
-                      </span>
-                    </div>
-                    <div style={{ display: "flex", gap: "8px" }}>
-                      <button onClick={() => handleDelete(t.id)} title="Delete" style={{ ...iconBtn, color: "#DC2626" }}><TrashIcon /></button>
-                    </div>
-                  </>
-                )}
-              </div>
-            );
-          })}
+                      </div>
+                      <div style={{ display: "flex", gap: "8px" }}>
+                        <button onClick={() => handleDelete(t.id)} title="Delete" style={{ ...iconBtn, color: "#DC2626" }}><TrashIcon /></button>
+                      </div>
+                    </>
+                  )}
+                </div>
+              );
+            })}
           </div>
         </div>
       )}
@@ -682,9 +716,13 @@ interface SyncStatus {
   desc?: string;
 }
 
-function ContractsSyncStep({ onComplete, onPrev, savedContracts }: ContractsSyncStepProps): React.JSX.Element {
-  const [paymentsReflected, setPaymentsReflected] = useState<string | null>(null);
-  const [futureEngagement, setFutureEngagement] = useState<string | null>(null);
+function ContractsSyncStep({ onComplete, onPrev, savedContracts, onSave, initialPaymentsReflected, initialFutureEngagement }: ContractsSyncStepProps): React.JSX.Element {
+  const [paymentsReflected, setPaymentsReflected] = useState<string | null>(initialPaymentsReflected ?? null);
+  const [futureEngagement, setFutureEngagement] = useState<string | null>(initialFutureEngagement ?? null);
+
+  const persistSelection = (payments: string | null, future: string | null): void => {
+    onSave({ paymentsReflected: payments, futureEngagement: future });
+  };
 
   const getStatus = (): SyncStatus | null => {
     if (paymentsReflected === "yes") return { ok: true, label: null };
@@ -719,15 +757,15 @@ function ContractsSyncStep({ onComplete, onPrev, savedContracts }: ContractsSync
 
       {/* Payments reflected */}
       <p style={{ margin: "0 0 10px", fontSize: "13.5px", fontWeight: "600", color: "#0F172A" }}>Are contract payments reflected in bank statements?</p>
-      <RadioRow value="yes" selected={paymentsReflected} onChange={setPaymentsReflected} label="Yes - Payments reflected" desc="Paid in full, or initial deposit with subsequent monthly payments visible" />
-      <RadioRow value="no" selected={paymentsReflected} onChange={(v) => { setPaymentsReflected(v); setFutureEngagement(null); }} label="No - Payments not visible" desc="Contract payments are not reflected in bank statements" />
+      <RadioRow value="yes" selected={paymentsReflected} onChange={(v) => { setPaymentsReflected(v); persistSelection(v, futureEngagement); }} label="Yes - Payments reflected" desc="Paid in full, or initial deposit with subsequent monthly payments visible" />
+      <RadioRow value="no" selected={paymentsReflected} onChange={(v) => { setPaymentsReflected(v); setFutureEngagement(null); persistSelection(v, null); }} label="No - Payments not visible" desc="Contract payments are not reflected in bank statements" />
 
       {/* Future engagement */}
       {paymentsReflected === "no" && (
         <div style={{ marginTop: "16px" }}>
           <p style={{ margin: "0 0 10px", fontSize: "13.5px", fontWeight: "600", color: "#0F172A" }}>Is this for future engagement?</p>
-          <RadioRow value="yes" selected={futureEngagement} onChange={setFutureEngagement} label="Yes - Future engagement dates" />
-          <RadioRow value="no" selected={futureEngagement} onChange={setFutureEngagement} label="No - Dates have expired" />
+          <RadioRow value="yes" selected={futureEngagement} onChange={(v) => { setFutureEngagement(v); persistSelection(paymentsReflected, v); }} label="Yes - Future engagement dates" />
+          <RadioRow value="no" selected={futureEngagement} onChange={(v) => { setFutureEngagement(v); persistSelection(paymentsReflected, v); }} label="No - Dates have expired" />
         </div>
       )}
 
@@ -772,6 +810,9 @@ function FinancialPageImpl(): React.JSX.Element {
   const [financialData, setFinancialData] = useState<FinancialData>({});
   const [savedContracts, setSavedContracts] = useState<SavedContract[]>([]);
   const [recordId, setRecordId] = useState<number | null>(null);
+  // hydrated: true once sessionStorage has been read, so step components
+  // always mount with the correct initial values (not empty defaults)
+  const [hydrated, setHydrated] = useState<boolean>(false);
 
   useEffect(() => {
     const queryId = searchParams.get("recordId") || searchParams.get("id");
@@ -781,7 +822,15 @@ function FinancialPageImpl(): React.JSX.Element {
     try {
       const c = sessionStorage.getItem("hr_contracts");
       if (c) setSavedContracts(JSON.parse(c) as SavedContract[]);
-    } catch {}
+    } catch { }
+
+    // Restore previously-saved financial data so it survives full-page navigation
+    try {
+      const f = sessionStorage.getItem("hr_financial_data");
+      if (f) setFinancialData(JSON.parse(f) as FinancialData);
+    } catch { }
+
+    setHydrated(true);
   }, [searchParams]);
 
   const stepIds = ["balance", "cashflow", "investments", "contracts"];
@@ -797,7 +846,15 @@ function FinancialPageImpl(): React.JSX.Element {
     }
   };
 
-  const handleSave = (data: Partial<FinancialData>): void => setFinancialData((prev) => ({ ...prev, ...data }));
+  const handleSave = (data: Partial<FinancialData>): void => {
+    setFinancialData((prev) => {
+      const merged = { ...prev, ...data };
+      try {
+        sessionStorage.setItem("hr_financial_data", JSON.stringify(merged));
+      } catch { }
+      return merged;
+    });
+  };
 
   const handleComplete = (): void => {
     markComplete("financial");
@@ -816,10 +873,15 @@ function FinancialPageImpl(): React.JSX.Element {
 
         <StepPills active={step} onStepClick={goToStep} unlockedUpTo={unlockedUpTo} />
 
-        {step === "balance" && <BalanceStep onNext={() => { handleNext("balance"); }} onSave={handleSave} />}
-        {step === "cashflow" && <CashFlowStep onNext={() => handleNext("cashflow")} onPrev={() => setStep("balance")} onSave={handleSave} />}
-        {step === "investments" && <InvestmentsStep onNext={() => handleNext("investments")} onPrev={() => setStep("cashflow")} onSave={handleSave} />}
-        {step === "contracts" && <ContractsSyncStep onComplete={handleComplete} onPrev={() => setStep("investments")} savedContracts={savedContracts} />}
+        {!hydrated && (
+          <div style={{ display: "flex", justifyContent: "center", padding: "60px" }}>
+            <SpinnerIcon />
+          </div>
+        )}
+        {hydrated && step === "balance" && <BalanceStep onNext={() => { handleNext("balance"); }} onSave={handleSave} initialBalance={financialData.balance} />}
+        {hydrated && step === "cashflow" && <CashFlowStep onNext={() => handleNext("cashflow")} onPrev={() => setStep("balance")} onSave={handleSave} initialIncoming={financialData.incoming} initialOutgoing={financialData.outgoing} />}
+        {hydrated && step === "investments" && <InvestmentsStep onNext={() => handleNext("investments")} onPrev={() => setStep("cashflow")} onSave={handleSave} initialTransactions={financialData.transactions} />}
+        {hydrated && step === "contracts" && <ContractsSyncStep onComplete={handleComplete} onPrev={() => setStep("investments")} savedContracts={savedContracts} onSave={handleSave} initialPaymentsReflected={financialData.paymentsReflected} initialFutureEngagement={financialData.futureEngagement} />}
 
         <div style={{ marginTop: "20px" }}>
           {step === "balance" ? (
