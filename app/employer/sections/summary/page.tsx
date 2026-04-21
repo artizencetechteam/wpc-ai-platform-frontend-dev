@@ -119,6 +119,8 @@ function SummaryPageImpl(): React.JSX.Element {
     outgoing?: number;
     netCashFlow?: number;
     paymentsReflected?: string | null;
+    futureEngagement?: string | null;
+    transactions?: Array<{ status: string }>;
   }>({});
   const [contracts, setContracts] = useState<Array<{ clientName?: string; exists?: string; aligns?: string }>>([]);
   const [pensionData, setPensionData] = useState<{ companyRegistered?: string; eligibilityChecks?: Record<string, unknown> }>({});
@@ -193,6 +195,16 @@ function SummaryPageImpl(): React.JSX.Element {
     ? "No contracts added"
     : `${contractsPassed}/${contractsTotal} contract${contractsTotal > 1 ? "s" : ""} validated`;
 
+  const hasFlaggedTransactions = financialData.transactions?.some(t => t.status === "fail") || false;
+  const financialCompliant = !!progress.financial && 
+    (financialData.balance ?? 0) >= 10425 &&
+    (financialData.netCashFlow == null || financialData.netCashFlow > 0) &&
+    !hasFlaggedTransactions &&
+    (financialData.paymentsReflected === "yes" || (financialData.paymentsReflected === "no" && financialData.futureEngagement === "yes"));
+
+  const pensionCompliant = !!progress.pension && pensionData.companyRegistered !== "no";
+  const contractsCompliant = !!progress.contracts && (contractsTotal === 0 || contractsPassed === contractsTotal);
+
   const workflows: Workflow[] = [
     {
       key: "rtw",
@@ -204,7 +216,7 @@ function SummaryPageImpl(): React.JSX.Element {
       key: "pension",
       title: "Pension Compliance",
       subtitle: pensionSubtitle,
-      compliant: !!progress.pension,
+      compliant: pensionCompliant,
     },
     {
       key: "auth",
@@ -216,13 +228,13 @@ function SummaryPageImpl(): React.JSX.Element {
       key: "contracts",
       title: "Client Contracts",
       subtitle: contractsSubtitle,
-      compliant: !!progress.contracts,
+      compliant: contractsCompliant,
     },
     {
       key: "financial",
       title: "Financial Viability",
       subtitle: financialSubtitle,
-      compliant: !!progress.financial,
+      compliant: financialCompliant,
     },
   ];
 
