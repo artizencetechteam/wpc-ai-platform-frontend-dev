@@ -433,9 +433,15 @@ function InvestmentsStep({ onNext, onPrev, onSave, initialTransactions }: Invest
     const file = e.target.files?.[0];
     if (!file) return;
 
+    const hrRecordId = sessionStorage.getItem("current_hr_record_id");
+    const storedBankName = hrRecordId ? sessionStorage.getItem(`bank_name_${hrRecordId}`) : null;
+    
     const formData = new FormData();
     formData.append("file", file);
-    formData.append("use_ocr", "true");
+    formData.append("bank_name", storedBankName || "Generic (AI Vision)");
+    formData.append("manual_opening", "0");
+    formData.append("manual_closing", "0");
+    formData.append("employee_name", "string");
 
     setIsParsing(true);
     const loadingToast = toast.loading("Parsing bank statement...");

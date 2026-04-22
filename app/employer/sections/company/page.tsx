@@ -159,7 +159,10 @@ function CompanyPageImpl() {
 
     const formData = new FormData();
     formData.append("file", file);
-    formData.append("use_ocr", "true");
+    formData.append("bank_name", bankName);
+    formData.append("manual_opening", "0");
+    formData.append("manual_closing", "0");
+    formData.append("employee_name", "string");
 
     setIsParsing(true);
     const loadingToast = toast.loading("Parsing bank statement...");
@@ -395,16 +398,10 @@ function CompanyPageImpl() {
                 onBlur={(e) => e.target.style.borderColor = "#D1D5DB"}
               >
                 <option value="">Select a Bank...</option>
-                <option value="Barclay">Barclay</option>
-                <option value="Bank of ireland">Bank of ireland</option>
-                <option value="HSBC">HSBC</option>
-                <option value="Lloyds">Lloyds</option>
-                <option value="Monzo">Monzo</option>
-                <option value="TSB Bank">TSB Bank</option>
-                <option value="Santander bank">Santander bank</option>
-                <option value="Natwest bank">Natwest bank</option>
-                <option value="Virgin money bank">Virgin money bank</option>
-                <option value="Bank of scotland">Bank of scotland</option>
+                <option value="Generic (AI Vision)">Generic (AI Vision)</option>
+                <option value="NATWEST">NATWEST</option>
+                <option value="SANTANDER">SANTANDER</option>
+                <option value="VIRGIN">VIRGIN</option>
               </select>
             </div>
 
