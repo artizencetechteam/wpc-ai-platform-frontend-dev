@@ -82,6 +82,12 @@ const RedCircleX = (): React.JSX.Element => (
   </svg>
 );
 
+const MessageIcon = (): React.JSX.Element => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+  </svg>
+);
+
 const workflowIcons: Record<string, () => React.JSX.Element> = {
   rtw: () => <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><rect x="3" y="1" width="14" height="18" rx="2" stroke="#64748B" strokeWidth="1.3" fill="none" /><path d="M6 7h8M6 10h8M6 13h5" stroke="#64748B" strokeWidth="1.2" strokeLinecap="round" /></svg>,
   pension: () => <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><circle cx="10" cy="8" r="3.5" stroke="#64748B" strokeWidth="1.3" fill="none" /><path d="M3 18c0-3.866 3.134-7 7-7s7 3.134 7 7" stroke="#64748B" strokeWidth="1.3" strokeLinecap="round" fill="none" /></svg>,
@@ -124,6 +130,11 @@ function SummaryPageImpl(): React.JSX.Element {
   }>({});
   const [contracts, setContracts] = useState<Array<{ clientName?: string; exists?: string; aligns?: string }>>([]);
   const [pensionData, setPensionData] = useState<{ companyRegistered?: string; eligibilityChecks?: Record<string, unknown> }>({});
+
+  // Feedback State
+  const [comments, setComments] = useState<Record<string, string>>({});
+  const [activeCommentSection, setActiveCommentSection] = useState<string | null>(null);
+  const [commentText, setCommentText] = useState("");
 
   useEffect(() => {
     const queryId = searchParams.get("recordId") || searchParams.get("id");
@@ -267,7 +278,15 @@ function SummaryPageImpl(): React.JSX.Element {
       <div style={{ maxWidth: "860px", margin: "30px auto", padding: "0 24px" }}>
 
         {/* Header */}
-        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center", marginBottom: "28px" }}>
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center", marginBottom: "28px", position: "relative" }}>
+          <div style={{ position: "absolute", top: 0, right: 0 }}>
+            <button 
+              onClick={() => { setActiveCommentSection("General"); setCommentText(comments["General"] || ""); }}
+              style={{ display: "flex", alignItems: "center", gap: "6px", backgroundColor: "white", color: "#0852C9", border: "1.5px solid #0852C9", padding: "8px 16px", borderRadius: "8px", cursor: "pointer", fontWeight: "600", fontSize: "13px", transition: "all 0.2s" }}
+            >
+              <MessageIcon /> Provide Feedback
+            </button>
+          </div>
           {allCompliant ? <GreenCheckBig /> : <YellowWarnBig />}
           {companyName && (
             <p style={{ margin: "8px 0 0", fontSize: "13px", fontWeight: "600", color: "#0852C9", letterSpacing: "0.3px" }}>
@@ -291,7 +310,10 @@ function SummaryPageImpl(): React.JSX.Element {
           padding: "20px 24px", marginBottom: "16px",
         }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "18px" }}>
-            <h3 style={{ margin: 0, fontSize: "16px", fontWeight: "700", color: "#0F172A" }}>Overall Status</h3>
+            <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+              <h3 style={{ margin: 0, fontSize: "16px", fontWeight: "700", color: "#0F172A" }}>Overall Status</h3>
+
+            </div>
             <span style={{
               padding: "5px 14px", borderRadius: "20px", fontSize: "12.5px", fontWeight: "700",
               backgroundColor: allCompliant ? "#16A34A" : "#DC2626", color: "white",
@@ -313,9 +335,11 @@ function SummaryPageImpl(): React.JSX.Element {
         {(financialData.balance != null || financialData.incoming != null) && (
           <div style={{
             backgroundColor: "white", borderRadius: "12px", border: "1px solid #E2E8F0",
-            padding: "18px 24px", marginBottom: "16px",
-            display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "12px",
+            padding: "18px 24px", marginBottom: "16px", position: "relative"
           }}>
+            <div style={{
+              display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "12px",
+            }}>
             {financialData.balance != null && (
               <div style={{ textAlign: "center" }}>
                 <div style={{ fontSize: "11px", color: "#64748B", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: "4px" }}>Closing Balance</div>
@@ -340,13 +364,18 @@ function SummaryPageImpl(): React.JSX.Element {
                 </div>
               </div>
             )}
+            </div>
           </div>
         )}
 
         {/* Workflow results */}
         <div style={{ backgroundColor: "white", borderRadius: "12px", border: "1px solid #E2E8F0", padding: "20px 24px", marginBottom: "16px" }}>
-          <h3 style={{ margin: "0 0 4px", fontSize: "16px", fontWeight: "700", color: "#0F172A" }}>Workflow Results</h3>
-          <p style={{ margin: "0 0 18px", fontSize: "13px", color: "#64748B" }}>Detailed breakdown of each validation workflow</p>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "18px" }}>
+            <div>
+              <h3 style={{ margin: "0 0 4px", fontSize: "16px", fontWeight: "700", color: "#0F172A" }}>Workflow Results</h3>
+              <p style={{ margin: 0, fontSize: "13px", color: "#64748B" }}>Detailed breakdown of each validation workflow</p>
+            </div>
+          </div>
           {workflows.map((w, i) => {
             const Icon = workflowIcons[w.key];
             return (
@@ -365,6 +394,13 @@ function SummaryPageImpl(): React.JSX.Element {
                   </div>
                 </div>
                 <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                  <button 
+                    onClick={() => { setActiveCommentSection(`Workflow: ${w.title}`); setCommentText(comments[`Workflow: ${w.title}`] || ""); }} 
+                    style={{ background: "none", border: "none", color: "#64748B", cursor: "pointer", display: "flex", alignItems: "center", gap: "4px", fontSize: "12px", fontWeight: "600", padding: "4px", marginRight: "4px" }}
+                    title="Add Comment"
+                  >
+                    <MessageIcon />
+                  </button>
                   <span style={{
                     padding: "4px 12px", borderRadius: "20px", fontSize: "12px", fontWeight: "700",
                     backgroundColor: w.compliant ? "#16A34A" : "#DC2626", color: "white",
@@ -380,7 +416,9 @@ function SummaryPageImpl(): React.JSX.Element {
 
         {/* Employee summary */}
         <div style={{ backgroundColor: "white", borderRadius: "12px", border: "1px solid #E2E8F0", padding: "20px 24px", marginBottom: "24px" }}>
-          <h3 style={{ margin: "0 0 16px", fontSize: "16px", fontWeight: "700", color: "#0F172A" }}>Employee Summary</h3>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
+            <h3 style={{ margin: 0, fontSize: "16px", fontWeight: "700", color: "#0F172A" }}>Employee Summary</h3>
+          </div>
           {employees.length === 0 ? (
             <p style={{ margin: 0, fontSize: "13px", color: "#94A3B8" }}>No employees found.</p>
           ) : (
@@ -438,6 +476,57 @@ function SummaryPageImpl(): React.JSX.Element {
           </button>
         </div>
       </div>
+
+      {/* Feedback/Comment Modal */}
+      {activeCommentSection && (
+        <div style={{
+          position: "fixed", top: 0, left: 0, width: "100%", height: "100%",
+          backgroundColor: "rgba(0,0,0,0.4)", display: "flex", alignItems: "center", justifyContent: "center",
+          zIndex: 9999, padding: "20px"
+        }}>
+          <div style={{
+            backgroundColor: "white", borderRadius: "12px", width: "100%", maxWidth: "500px",
+            padding: "24px", boxShadow: "0 10px 25px rgba(0,0,0,0.1)", display: "flex", flexDirection: "column"
+          }}>
+            <h3 style={{ margin: "0 0 16px", fontSize: "18px", fontWeight: "700", color: "#0F172A" }}>
+              Feedback: {activeCommentSection}
+            </h3>
+            <textarea
+              value={commentText}
+              onChange={(e) => setCommentText(e.target.value)}
+              placeholder="Enter your feedback or comments here..."
+              style={{
+                width: "100%", minHeight: "120px", padding: "12px", borderRadius: "8px",
+                border: "1px solid #CBD5E1", fontSize: "14px", fontFamily: "inherit",
+                resize: "vertical", outline: "none", marginBottom: "20px"
+              }}
+            />
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px" }}>
+              <button
+                onClick={() => setActiveCommentSection(null)}
+                style={{
+                  padding: "10px 16px", backgroundColor: "white", color: "#374151",
+                  border: "1px solid #D1D5DB", borderRadius: "8px", fontSize: "14px", fontWeight: "600", cursor: "pointer"
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  setComments(prev => ({ ...prev, [activeCommentSection]: commentText }));
+                  setActiveCommentSection(null);
+                }}
+                style={{
+                  padding: "10px 16px", backgroundColor: "#0852C9", color: "white",
+                  border: "none", borderRadius: "8px", fontSize: "14px", fontWeight: "600", cursor: "pointer"
+                }}
+              >
+                Submit Feedback
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
