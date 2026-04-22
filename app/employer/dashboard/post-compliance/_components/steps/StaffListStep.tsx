@@ -54,7 +54,7 @@ export default function StaffListStep() {
           fullName: 'John Doe',
           designation: 'Software Engineer',
           workingHours: '37.5',
-          salaryRate: '45000',
+          salaryRate: 'per annum',
           sponsorNote: 'N'
         });
         toast.success('Extraction complete (Case 1: Standard)');
@@ -64,7 +64,7 @@ export default function StaffListStep() {
           fullName: 'Jane Smith',
           designation: 'Senior Consultant',
           workingHours: '40',
-          salaryRate: '60000',
+          salaryRate: 'per hour',
           sponsorNote: 'Priority details found in sponsor note.'
         });
         toast.success('Extraction complete (Case 2: Priority Note)');
@@ -231,12 +231,15 @@ export default function StaffListStep() {
                  </div>
                  <div className="flex flex-col gap-2">
                     <label className="text-[11px] font-black text-gray-400 uppercase ml-2 tracking-widest">Salary Rate</label>
-                    <input 
-                      className="p-4 bg-gray-50 border border-transparent rounded-2xl text-[14px] font-bold focus:bg-white focus:border-blue-200 transition-all outline-none"
-                      placeholder="per annum"
+                    <select 
+                      className="p-4 bg-gray-50 border border-transparent rounded-2xl text-[14px] font-bold focus:bg-white focus:border-blue-200 transition-all outline-none appearance-none"
                       value={formData.salaryRate}
                       onChange={(e) => setFormData({...formData, salaryRate: e.target.value})}
-                    />
+                    >
+                      <option value="" disabled>Select rate</option>
+                      <option value="per annum">per annum</option>
+                      <option value="per hour">per hour</option>
+                    </select>
                  </div>
               </div>
 
