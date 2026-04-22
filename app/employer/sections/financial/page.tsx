@@ -423,6 +423,12 @@ function InvestmentsStep({ onNext, onPrev, onSave, initialTransactions }: Invest
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editValues, setEditValues] = useState<Transaction | null>(null);
 
+  // Search state
+  const [searchDate, setSearchDate] = useState("");
+  const [searchAmount, setSearchAmount] = useState("");
+  const [searchType, setSearchType] = useState("");
+  const [searchReference, setSearchReference] = useState("");
+
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -450,11 +456,25 @@ function InvestmentsStep({ onNext, onPrev, onSave, initialTransactions }: Invest
 
       const mapped: Transaction[] = fetchedTransactions.map((t: any, idx: number) => {
         // Handle various field names for amount
-        const amtValue = t.paid_out || t.paid_in || t.amount || t.value || 0;
+        const hasPaidOut = t.paid_out !== null && t.paid_out !== undefined && t.paid_out !== "" && String(t.paid_out).trim() !== "0";
+        const hasPaidIn = t.paid_in !== null && t.paid_in !== undefined && t.paid_in !== "" && String(t.paid_in).trim() !== "0";
+
+        const amtValue = hasPaidOut ? t.paid_out : (hasPaidIn ? t.paid_in : (t.amount || t.value || 0));
         const amt = typeof amtValue === 'string' ? parseFloat(amtValue.replace(/[^\d.-]/g, '')) : amtValue;
 
         // Handle various field names for type/direction
-        const isIncoming = t.paid_in || t.type === "credit" || t.direction === "in" || (typeof amt === 'number' && amt > 0);
+        let isIncoming = true;
+        if (hasPaidOut) {
+          isIncoming = false;
+        } else if (hasPaidIn) {
+          isIncoming = true;
+        } else if (t.type === "debit" || t.direction === "out") {
+          isIncoming = false;
+        } else if (t.type === "credit" || t.direction === "in") {
+          isIncoming = true;
+        } else if (typeof amt === 'number') {
+          isIncoming = amt >= 0;
+        }
 
         return {
           id: Date.now() + idx,
@@ -602,19 +622,56 @@ function InvestmentsStep({ onNext, onPrev, onSave, initialTransactions }: Invest
             </div>
           </div>
         </div>
-        <button onClick={handleAdd} style={{ marginTop: "12px", padding: "8px 16px", backgroundColor: "white", border: "1.5px solid #D1D5DB", borderRadius: "6px", fontSize: "13px", cursor: "pointer", color: "#374151" }}>
-          Add Transaction
-        </button>
+        <div style={{ display: "flex", justifyContent: "flex-start", alignItems: "center", marginTop: "12px" }}>
+          <button onClick={handleAdd} style={{ padding: "8px 16px", backgroundColor: "white", border: "1.5px solid #D1D5DB", borderRadius: "6px", fontSize: "13px", cursor: "pointer", color: "#374151" }}>
+            Add Transaction
+          </button>
+        </div>
       </div>
 
       {/* Transactions table */}
       {transactions.length > 0 && (
-        <div style={{ marginBottom: "18px", border: "1px solid #E2E8F0", borderRadius: "8px", overflow: "hidden" }}>
+        <div style={{ marginBottom: "18px" }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: "12px", marginBottom: "16px" }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: "10px" }}>
+              <div style={{ position: "relative" }}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#9CA3AF" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ position: "absolute", left: "10px", top: "50%", transform: "translateY(-50%)" }}>
+                  <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                </svg>
+                <input type="text" placeholder="Date..." value={searchDate} onChange={(e) => setSearchDate(e.target.value)} style={{ padding: "8px 12px 8px 30px", border: "1.5px solid #E2E8F0", borderRadius: "6px", fontSize: "13px", outline: "none", width: "100%", boxSizing: "border-box" }} />
+              </div>
+              <div style={{ position: "relative" }}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#9CA3AF" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ position: "absolute", left: "10px", top: "50%", transform: "translateY(-50%)" }}>
+                  <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                </svg>
+                <input type="text" placeholder="Amount..." value={searchAmount} onChange={(e) => setSearchAmount(e.target.value)} style={{ padding: "8px 12px 8px 30px", border: "1.5px solid #E2E8F0", borderRadius: "6px", fontSize: "13px", outline: "none", width: "100%", boxSizing: "border-box" }} />
+              </div>
+              <div style={{ position: "relative" }}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#9CA3AF" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ position: "absolute", left: "10px", top: "50%", transform: "translateY(-50%)" }}>
+                  <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                </svg>
+                <input type="text" placeholder="Type..." value={searchType} onChange={(e) => setSearchType(e.target.value)} style={{ padding: "8px 12px 8px 30px", border: "1.5px solid #E2E8F0", borderRadius: "6px", fontSize: "13px", outline: "none", width: "100%", boxSizing: "border-box" }} />
+              </div>
+              <div style={{ position: "relative" }}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#9CA3AF" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ position: "absolute", left: "10px", top: "50%", transform: "translateY(-50%)" }}>
+                  <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                </svg>
+                <input type="text" placeholder="Reference / Note..." value={searchReference} onChange={(e) => setSearchReference(e.target.value)} style={{ padding: "8px 12px 8px 30px", border: "1.5px solid #E2E8F0", borderRadius: "6px", fontSize: "13px", outline: "none", width: "100%", boxSizing: "border-box" }} />
+              </div>
+            </div>
+          </div>
+          <div style={{ border: "1px solid #E2E8F0", borderRadius: "8px", overflow: "hidden" }}>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1.2fr 1fr 2fr 1fr 1fr", padding: "10px 14px", backgroundColor: "#F8FAFC", borderBottom: "1px solid #E2E8F0" }}>
             {["Date", "Amount", "Type", "Reference", "Status", "Actions"].map((h) => <div key={h} style={{ fontSize: "12.5px", color: "#64748B", fontWeight: "600" }}>{h}</div>)}
           </div>
           <div style={{ maxHeight: "400px", overflowY: "auto" }}>
-            {transactions.map((t) => {
+            {transactions.filter(t => {
+              if (searchDate && (!t.date || !t.date.toLowerCase().includes(searchDate.toLowerCase()))) return false;
+              if (searchAmount && !String(t.amount).includes(searchAmount)) return false;
+              if (searchType && !t.type.toLowerCase().includes(searchType.toLowerCase())) return false;
+              if (searchReference && !t.reference.toLowerCase().includes(searchReference.toLowerCase())) return false;
+              return true;
+            }).map((t) => {
               const isEditing = editingId === t.id;
               return (
                 <div key={t.id} style={{ display: "grid", gridTemplateColumns: "1fr 1.2fr 1fr 2fr 1fr 1fr", padding: "12px 4px", borderBottom: "1px solid #F1F5F9", alignItems: "center" }}>
@@ -698,6 +755,7 @@ function InvestmentsStep({ onNext, onPrev, onSave, initialTransactions }: Invest
               );
             })}
           </div>
+        </div>
         </div>
       )}
 
