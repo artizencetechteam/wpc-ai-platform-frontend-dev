@@ -662,12 +662,16 @@ export async function updatePostComplianceStaffAction(
   clientToken?: string,
 ): Promise<AR<PostComplianceStaff>> {
   try {
+    console.log('[updatePostComplianceStaffAction] PATCH payload:', JSON.stringify(payload));
     const res = await apiFetch(
       `${BASE_URL}/api/post_compliance/staff/${id}/`,
       { method: 'PATCH', body: JSON.stringify(payload) },
       clientToken,
     );
-    const data = await res.json();
+    const text = await res.text();
+    console.log('[updatePostComplianceStaffAction] RESPONSE', res.status, text);
+    let data: any;
+    try { data = JSON.parse(text); } catch { data = text; }
     if (!res.ok) return { success: false, message: errMsg(data) };
     return { success: true, message: 'Staff updated.', data };
   } catch (e) {
