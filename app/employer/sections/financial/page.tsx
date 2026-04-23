@@ -86,6 +86,8 @@ interface InvestmentsStepProps {
   onPrev: () => void;
   onSave: (data: Partial<FinancialData>) => void;
   initialTransactions?: Transaction[];
+  initialOpening?: number;
+  initialClosing?: number;
 }
 
 interface ContractsSyncStepProps {
@@ -413,15 +415,15 @@ function CashFlowStep({ onNext, onPrev, onSave, initialIncoming, initialOutgoing
 
 // ─── InvestmentsStep ──────────────────────────────────────────────────────────
 
-function InvestmentsStep({ onNext, onPrev, onSave, initialTransactions }: InvestmentsStepProps): React.JSX.Element {
+function InvestmentsStep({ onNext, onPrev, onSave, initialTransactions, initialOpening, initialClosing }: InvestmentsStepProps): React.JSX.Element {
   const [amount, setAmount] = useState<string>("");
   const [reference, setReference] = useState<string>("");
   const [type, setType] = useState<"incoming" | "outgoing">("incoming");
   const [transactions, setTransactions] = useState<Transaction[]>(initialTransactions || []);
   const [isParsing, setIsParsing] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [manualOpening, setManualOpening] = useState("");
-  const [manualClosing, setManualClosing] = useState("");
+  const [manualOpening, setManualOpening] = useState(initialOpening != null ? String(initialOpening) : "");
+  const [manualClosing, setManualClosing] = useState(initialClosing != null ? String(initialClosing) : "");
 
   // Editing state
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -563,7 +565,22 @@ function InvestmentsStep({ onNext, onPrev, onSave, initialTransactions }: Invest
     setEditValues(null);
   };
 
-  const handleNext = (): void => { onSave({ transactions }); onNext(); };
+  // Sync manual balances with parent state in real-time
+  useEffect(() => {
+    onSave({ 
+      opening_balance: parseFloat(manualOpening) || 0, 
+      closing_balance: parseFloat(manualClosing) || 0 
+    });
+  }, [manualOpening, manualClosing]);
+
+  const handleNext = (): void => { 
+    onSave({ 
+      transactions,
+      opening_balance: parseFloat(manualOpening) || 0, 
+      closing_balance: parseFloat(manualClosing) || 0 
+    }); 
+    onNext(); 
+  };
 
   return (
     <div style={{ backgroundColor: "white", borderRadius: "10px", border: "1px solid #E2E8F0", padding: "28px 30px" }}>
@@ -1016,7 +1033,16 @@ function FinancialPageImpl(): React.JSX.Element {
         )}
         {hydrated && step === "balance" && <BalanceStep onNext={() => { handleNext("balance"); }} onSave={handleSave} initialBalance={financialData.balance} />}
         {hydrated && step === "cashflow" && <CashFlowStep onNext={() => handleNext("cashflow")} onPrev={() => setStep("balance")} onSave={handleSave} initialIncoming={financialData.incoming} initialOutgoing={financialData.outgoing} />}
-        {hydrated && step === "investments" && <InvestmentsStep onNext={() => handleNext("investments")} onPrev={() => setStep("cashflow")} onSave={handleSave} initialTransactions={financialData.transactions} />}
+        {hydrated && step === "investments" && (
+          <InvestmentsStep 
+            onNext={() => handleNext("investments")} 
+            onPrev={() => setStep("cashflow")} 
+            onSave={handleSave} 
+            initialTransactions={financialData.transactions} 
+            initialOpening={financialData.opening_balance}
+            initialClosing={financialData.closing_balance}
+          />
+        )}
         {hydrated && step === "contracts" && <ContractsSyncStep onComplete={handleComplete} onPrev={() => setStep("investments")} savedContracts={savedContracts} onSave={handleSave} initialPaymentsReflected={financialData.paymentsReflected} initialFutureEngagement={financialData.futureEngagement} />}
 
         <div style={{ marginTop: "20px" }}>

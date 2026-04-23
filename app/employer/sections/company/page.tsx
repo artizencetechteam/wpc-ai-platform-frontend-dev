@@ -321,6 +321,17 @@ function CompanyPageImpl() {
 
         const savedBank = sessionStorage.getItem(`bank_name_${recordId}`);
         if (savedBank) setBankName(savedBank);
+
+        // Restore manual balances and transactions from shared financial data
+        const finDataStr = sessionStorage.getItem("hr_financial_data");
+        if (finDataStr) {
+          try {
+            const finData = JSON.parse(finDataStr);
+            if (finData.transactions) setTransactions(finData.transactions);
+            if (finData.opening_balance) setManualOpening(String(finData.opening_balance));
+            if (finData.closing_balance) setManualClosing(String(finData.closing_balance));
+          } catch { /* ignore */ }
+        }
       }
     } catch (e) {
       console.error("initHRRecord error:", e);
@@ -330,13 +341,33 @@ function CompanyPageImpl() {
     }
   }
 
-
+  // Persist manual balance changes in real-time
+  useEffect(() => {
+    if (loading) return;
+    try {
+      const prevStr = sessionStorage.getItem("hr_financial_data");
+      const prev = prevStr ? JSON.parse(prevStr) : {};
+      prev.opening_balance = manualOpening;
+      prev.closing_balance = manualClosing;
+      sessionStorage.setItem("hr_financial_data", JSON.stringify(prev));
+    } catch { }
+  }, [manualOpening, manualClosing, loading]);
 
   const handleContinue = () => {
     if (!companyName.trim() || !bankName) return;
     if (hrRecordId) {
       sessionStorage.setItem(`company_name_${hrRecordId}`, companyName.trim());
       sessionStorage.setItem(`bank_name_${hrRecordId}`, bankName);
+
+      // Final sync of financial data before moving to next page
+      try {
+        const prevStr = sessionStorage.getItem("hr_financial_data");
+        const prev = prevStr ? JSON.parse(prevStr) : {};
+        prev.opening_balance = manualOpening;
+        prev.closing_balance = manualClosing;
+        prev.transactions = transactions;
+        sessionStorage.setItem("hr_financial_data", JSON.stringify(prev));
+      } catch { }
 
       // Mark company step as complete in progress map
       const p = { ...tabProgress, company: true };
