@@ -1,15 +1,61 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAuditStore, EmployeeType } from '@/app/store/auditStore';
-import { Plus, Upload, User, UserCheck, Search, Loader2 } from 'lucide-react';
+import { Plus, Upload, User, UserCheck, Search, Loader2, RefreshCw } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { createPostComplianceStaffAction, getPostComplianceStaffByAuditAction, updatePostComplianceStaffDetailsAction } from '@/app/employer/sections/action/action';
 
 export default function StaffListStep() {
-  const { employees, addEmployee } = useAuditStore();
+  const { employees, addEmployee, setEmployees, auditId, setAuditId } = useAuditStore();
   const [showAddOptions, setShowAddOptions] = useState(false);
   const [modalType, setModalType] = useState<'A' | 'B' | null>(null);
   const [isExtracting, setIsExtracting] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+
+  useEffect(() => {
+    if (auditId && employees.length === 0) {
+      loadStaff();
+    }
+  }, [auditId]);
+
+  const loadStaff = async () => {
+    if (!auditId) return;
+    setIsLoading(true);
+    try {
+      const res = await getPostComplianceStaffByAuditAction(auditId);
+      console.log('[loadStaff] UI received:', res);
+      if (res.success && res.data) {
+        const mappedEmployees = res.data.map(staff => ({
+          id: String(staff.id),
+          type: staff.employe_type === 'SPONSORED' ? 'Sponsored - New hire' : 'Not Sponsored',
+          fullName: staff.full_name || '',
+          designation: staff.designation || '',
+          workingHours: staff.working_hours || '',
+          salaryRate: staff.salary_rate || '',
+          payrollOnboardingDate: staff.payroll_onboarding_date || '',
+          rtwStatus: 'Not Available',
+          documents: {},
+          recruitmentDocs: { experienceLetters: [], otherRelevantDates: [] },
+          cosDetails: staff.employe_type === 'SPONSORED' ? {
+            workStartDate: '2024-05-01',
+            workEndDate: '2027-05-01',
+            cosAssignDate: '2024-04-15',
+            cosAssignDateRaw: '2024-04-15',
+            sponsorNote: 'N'
+          } : undefined
+        }));
+        
+        // Load into local state
+        setEmployees(mappedEmployees as any);
+      }
+    } catch (e) {
+      console.error('Failed to load staff:', e);
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   // Form states
   const [formData, setFormData] = useState({
@@ -72,25 +118,67 @@ export default function StaffListStep() {
     }, 1500);
   };
 
-  const handleSubmit = () => {
-    const type: EmployeeType = modalType === 'A' ? 'Sponsored - New hire' : 'Not Sponsored';
-    addEmployee({
-      type,
-      fullName: formData.fullName,
-      designation: formData.designation,
-      workingHours: formData.workingHours,
-      salaryRate: formData.salaryRate,
-      payrollOnboardingDate: formData.payrollOnboardingDate,
-      cosDetails: modalType === 'A' ? {
-        workStartDate: '2024-05-01',
-        workEndDate: '2027-05-01',
-        cosAssignDate: '2024-04-15',
-        cosAssignDateRaw: '2024-04-15',
-        sponsorNote: formData.sponsorNote || 'N'
-      } : undefined
-    });
-    setModalType(null);
-    toast.success('Employee added to sequential audit list');
+  const handleSubmit = async () => {
+    if (!auditId) {
+      toast.error('Audit ID not found. Please refresh the page.');
+      return;
+    }
+
+    if (!formData.fullName.trim()) {
+      toast.error('Full name is required.');
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      const empType: EmployeeType = modalType === 'A' ? 'Sponsored - New hire' : 'Not Sponsored';
+
+      // Step 1: Create the staff record with all details
+      const payload: Record<string, any> = {
+        full_name: formData.fullName,
+        post_compliance_audit: auditId,
+        PostComplianceAuditObj: auditId,
+        designation: formData.designation || null,
+        working_hours: formData.workingHours || null,
+        salary_rate: formData.salaryRate || null,
+        payroll_onboarding_date: formData.payrollOnboardingDate || null,
+        employe_type: modalType === 'A' ? 'SPONSORED' : 'NOT_SPONSORED',
+      };
+
+      const res = await createPostComplianceStaffAction(payload as any);
+      console.log(auditId);
+      
+      if (res.success && res.data) {
+        const staffId = res.data.id;
+
+        // Step 2: Update local audit store
+        addEmployee({
+          id: String(staffId),
+          type: empType,
+          fullName: formData.fullName,
+          designation: formData.designation,
+          workingHours: formData.workingHours,
+          salaryRate: formData.salaryRate,
+          payrollOnboardingDate: formData.payrollOnboardingDate,
+          cosDetails: modalType === 'A' ? {
+            workStartDate: '2024-05-01',
+            workEndDate: '2027-05-01',
+            cosAssignDate: '2024-04-15',
+            cosAssignDateRaw: '2024-04-15',
+            sponsorNote: formData.sponsorNote || 'N'
+          } : undefined
+        });
+        setModalType(null);
+        toast.success('Employee added and details saved to server');
+      } else {
+        toast.error(res.message || 'Failed to add employee');
+      }
+    } catch (error) {
+      console.error('Failed to add employee:', error);
+      toast.error('Network error.');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -263,9 +351,10 @@ export default function StaffListStep() {
                </button>
                <button 
                 onClick={handleSubmit}
-                className="flex-1 py-4 text-[14px] font-black text-white bg-[#0852C9] rounded-2xl hover:bg-[#0644A8] shadow-lg shadow-blue-100 transition-all active:scale-95 flex items-center justify-center gap-2"
+                disabled={isSubmitting || isExtracting}
+                className={`flex-1 py-4 text-[14px] font-black text-white bg-[#0852C9] rounded-2xl hover:bg-[#0644A8] shadow-lg shadow-blue-100 transition-all active:scale-95 flex items-center justify-center gap-2 ${(isSubmitting || isExtracting) ? 'opacity-70 pointer-events-none' : ''}`}
                >
-                 {isExtracting && <Loader2 className="animate-spin" size={16} />}
+                 {(isSubmitting || isExtracting) && <Loader2 className="animate-spin" size={16} />}
                  Complete Entry
                </button>
             </div>

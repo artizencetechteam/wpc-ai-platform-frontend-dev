@@ -2,8 +2,9 @@
 
 import React, { useState } from 'react';
 import { useAuditStore, DocAvailability } from '@/app/store/auditStore';
-import { Check, X, Minus, MessageSquare, AlertCircle, Info, User } from 'lucide-react';
+import { Check, X, Minus, MessageSquare, AlertCircle, Info, User, Loader2 } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { updatePostComplianceStaffDetailsAction } from '@/app/employer/sections/action/action';
 
 const DOSSIER_DOCS = [
   'Passport', 'BRP/EVISA', 'Visa Vignette', 'COS', 'Right to work check',
@@ -16,9 +17,41 @@ const DOSSIER_DOCS = [
   'Unauthorized Absence', 'Work Location changed', 'Statutory Leaves', 'Visa Monitoring'
 ];
 
+// Maps display label → API field name on the staff detail endpoint
+const DOC_TO_API: Record<string, string> = {
+  'Passport':                                  'passport',
+  'BRP/EVISA':                                 'brp_visa',
+  'Visa Vignette':                             'visa_vignette',
+  'COS':                                       'cos',
+  'Right to work check':                       'right_to_work_check',
+  'Proof of address':                          'proof_of_address',
+  'History of contact details (evidence)':     'history_of_contact_details',
+  'Change of circumstance tracking':           'change_of_circumstance_tracking',
+  'Personal information':                      'personal_information',
+  'Employment contract':                       'employment_contract',
+  'CV (candidate)':                            'cv_candidate',
+  'Experience Letter':                         'experience_letter',
+  'Experience letter validation':              'experience_letter_validation',
+  'CV (unsuccessful candidates)':              'cv_unsuccessful_candidates',
+  'Job advert':                                'job_advert',
+  'Interview note (candidate)':                'interview_note_candidate',
+  'Interview notes (unsuccessful candidates)': 'interview_notes_unsuccessful',
+  'English Language Proficiency test':         'english_language_proficiency_test',
+  'TB Test':                                   'tb_test',
+  'P45 (previous employer)':                   'p45_previous_employer',
+  'Attendance records':                        'attendance_records',
+  'Evidence of Work':                          'evidence_of_work',
+  'Holiday/Leave records':                     'holiday_leave_records',
+  'Unauthorized Absence':                      'unauthorised_absence',
+  'Work Location changed':                     'work_location_changed',
+  'Statutory Leaves':                          'statutory_leaves',
+  'Visa Monitoring':                           'visa_monitoring',
+};
+
 export default function DossierWorkflow() {
   const { employees, updateEmployee } = useAuditStore();
   const [selectedEmpId, setSelectedEmpId] = useState<string | null>(employees[0]?.id || null);
+  const [isSaving, setIsSaving] = useState(false);
 
   const selectedEmployee = employees.find(e => e.id === selectedEmpId);
 
@@ -35,6 +68,45 @@ export default function DossierWorkflow() {
     updateEmployee(selectedEmpId, {
       remarks: { observation: obs, recommendation: rec }
     });
+  };
+
+  const handleSaveDossier = async () => {
+    if (!selectedEmployee || !selectedEmpId) return;
+    const staffId = Number(selectedEmpId);
+    if (isNaN(staffId)) {
+      toast.error('Invalid employee ID.');
+      return;
+    }
+    setIsSaving(true);
+    try {
+      // Build the payload by mapping each document label to its API field
+      const docPayload: Record<string, string | null> = {};
+      for (const doc of DOSSIER_DOCS) {
+        const apiField = DOC_TO_API[doc];
+        if (apiField) {
+          const rawStatus = selectedEmployee.documents[doc];
+          let apiStatus = null;
+          if (rawStatus === 'present') apiStatus = 'Available';
+          else if (rawStatus === 'missing') apiStatus = 'Missing';
+          else if (rawStatus === 'n/a') apiStatus = 'N/A';
+          docPayload[apiField] = apiStatus;
+        }
+      }
+      const res = await updatePostComplianceStaffDetailsAction(staffId, {
+        ...docPayload,
+        overall_observation: selectedEmployee.remarks?.observation || null,
+        recommendation_remarks: selectedEmployee.remarks?.recommendation || null,
+      });
+      if (res.success) {
+        toast.success('Dossier saved to server');
+      } else {
+        toast.error(res.message || 'Save failed.');
+      }
+    } catch {
+      toast.error('Network error saving dossier.');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   return (
@@ -145,10 +217,12 @@ export default function DossierWorkflow() {
 
                <div className="flex justify-end pt-4">
                   <button 
-                    onClick={() => toast.success('Dossier records saved')}
-                    className="px-12 py-4 bg-gray-900 text-white rounded-2xl text-[14px] font-black shadow-xl"
+                    onClick={handleSaveDossier}
+                    disabled={isSaving}
+                    className={`px-12 py-4 bg-gray-900 text-white rounded-2xl text-[14px] font-black shadow-xl flex items-center gap-2 transition-all active:scale-95 ${isSaving ? 'opacity-70 pointer-events-none' : ''}`}
                   >
-                    Save Dossier
+                    {isSaving && <Loader2 className="animate-spin" size={16} />}
+                    {isSaving ? 'Saving...' : 'Save Dossier'}
                   </button>
                </div>
              </>

@@ -2,12 +2,14 @@
 
 import React, { useState } from 'react';
 import { useAuditStore, AuditEmployee, EmployeeType } from '@/app/store/auditStore';
-import { FileText, Calendar, Plus, ChevronRight, CheckCircle2, User, History } from 'lucide-react';
+import { FileText, Calendar, Plus, ChevronRight, CheckCircle2, User, History, Loader2 } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { updatePostComplianceStaffDetailsAction } from '@/app/employer/sections/action/action';
 
 export default function RecruitmentDocsStep() {
   const { employees, updateEmployee } = useAuditStore();
   const [selectedEmpId, setSelectedEmpId] = useState<string | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
 
   const selectedEmployee = employees.find(e => e.id === selectedEmpId);
 
@@ -25,6 +27,33 @@ export default function RecruitmentDocsStep() {
   const handleTypeChange = (type: EmployeeType) => {
     if (selectedEmpId) {
       updateEmployee(selectedEmpId, { type });
+    }
+  };
+
+  const handleSave = async () => {
+    if (!selectedEmployee || !selectedEmpId) return;
+    const staffId = Number(selectedEmpId);
+    if (isNaN(staffId)) {
+      toast.error('Invalid employee ID.');
+      return;
+    }
+    setIsSaving(true);
+    try {
+      const res = await updatePostComplianceStaffDetailsAction(staffId, {
+        interview_dates: selectedEmployee.recruitmentDocs.interviewDate || null,
+        exp_validation_date: selectedEmployee.recruitmentDocs.expLetterValidationDate || null,
+        employment_type: selectedEmployee.type || null,
+        cv_file_url: selectedEmployee.recruitmentDocs.cvFile || null,
+      });
+      if (res.success) {
+        toast.success('Recruitment profile saved to server');
+      } else {
+        toast.error(res.message || 'Save failed.');
+      }
+    } catch (e) {
+      toast.error('Network error saving profile.');
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -168,10 +197,12 @@ export default function RecruitmentDocsStep() {
 
               <div className="mt-6 flex justify-end">
                  <button 
-                  onClick={() => toast.success('Profile documents saved')}
-                  className="px-10 py-4 bg-gray-900 text-white rounded-2xl text-[13px] font-black shadow-lg shadow-gray-200 active:scale-95 transition-all"
+                  onClick={handleSave}
+                  disabled={isSaving}
+                  className={`px-10 py-4 bg-gray-900 text-white rounded-2xl text-[13px] font-black shadow-lg shadow-gray-200 active:scale-95 transition-all flex items-center gap-2 ${isSaving ? 'opacity-70 pointer-events-none' : ''}`}
                  >
-                   Save Profile
+                   {isSaving && <Loader2 className="animate-spin" size={16} />}
+                   {isSaving ? 'Saving...' : 'Save Profile'}
                  </button>
               </div>
             </div>

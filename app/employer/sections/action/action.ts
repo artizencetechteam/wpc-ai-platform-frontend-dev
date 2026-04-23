@@ -122,6 +122,85 @@ export type TaskItem = {
   employees?: Employee[];
 };
 
+export type PostComplianceAudit = {
+  id: number;
+  reference_number?: string;
+  company_client_name?: string | null;
+  User?: number;
+  date_created?: string;
+  date_updated?: string;
+  [key: string]: any;
+};
+
+export type PostComplianceStaff = {
+  id: number;
+  full_name: string;
+  designation?: string | null;
+  working_hours?: string | null;
+  salary_rate?: string | null;
+  payroll_onboarding_date?: string | null;
+  employe_type?: string | null;
+  cos_file_url?: string | null;
+  cos_file_extracted_json?: any | null;
+  cv_file_url?: string | null;
+  cv_file_extracted_json?: any | null;
+  experiece_letter_file_url?: string | null;
+  interview_dates?: string | null;
+  exp_validation_date?: string | null;
+  employment_type?: string | null;
+  rtw_work_check?: string | null;
+  rtw_work_file_url?: string | null;
+  rtw_work_file_extracted_json?: any | null;
+  passport?: string | null;
+  brp_visa?: string | null;
+  visa_vignette?: string | null;
+  cos?: string | null;
+  right_to_work_check?: string | null;
+  proof_of_address?: string | null;
+  history_of_contact_details?: string | null;
+  change_of_circumstance_tracking?: string | null;
+  personal_information?: string | null;
+  employment_contract?: string | null;
+  cv_candidate?: string | null;
+  experience_letter?: string | null;
+  experience_letter_validation?: string | null;
+  cv_unsuccessful_candidates?: string | null;
+  job_advert?: string | null;
+  interview_note_candidate?: string | null;
+  interview_notes_unsuccessful?: string | null;
+  english_language_proficiency_test?: string | null;
+  tb_test?: string | null;
+  p45_previous_employer?: string | null;
+  attendance_records?: string | null;
+  evidence_of_work?: string | null;
+  holiday_leave_records?: string | null;
+  unauthorised_absence?: string | null;
+  work_location_changed?: string | null;
+  statutory_leaves?: string | null;
+  visa_monitoring?: string | null;
+  overall_observation?: string | null;
+  recommendation_remarks?: string | null;
+  user?: number | null;
+  PostComplianceAuditObj?: number | null;
+  [key: string]: any;
+};
+
+export type CreateAuditPayload = {
+  User?: number;
+  company_client_name?: string;
+};
+
+export type UpdateAuditPayload = Partial<CreateAuditPayload>;
+
+export type CreateStaffPayload = {
+  full_name: string;
+  post_compliance_audit: number;
+  PostComplianceAuditObj: number;
+  [key: string]: any;
+};
+
+export type UpdateStaffPayload = Partial<Omit<PostComplianceStaff, 'id'>>;
+
 // ─── HR Validation Records ────────────────────────────────────────────────────
 
 export async function listHRValidationRecordsAction(
@@ -374,4 +453,259 @@ export async function getCallAgentsTasksAction(
   _clientToken?: string,
 ): Promise<AR<{ tasks: TaskItem[]; totalPages: number }>> {
   return { success: true, message: 'OK', data: { tasks: [], totalPages: 1 } };
+}
+
+// ─── Post Compliance Audits ───────────────────────────────────────────────────
+
+export async function createPostComplianceAuditAction(
+  userId: number,
+  clientToken?: string,
+): Promise<AR<PostComplianceAudit>> {
+  try {
+    const res = await apiFetch(
+      `${BASE_URL}/api/post_compliance/audits/`,
+      { method: 'POST', body: JSON.stringify({ User: userId }) },
+      clientToken,
+    );
+    const data = await res.json();
+    if (!res.ok) return { success: false, message: errMsg(data) };
+    return { success: true, message: 'Audit created.', data };
+  } catch (e) {
+    console.error('[createPostComplianceAuditAction]', e);
+    return { success: false, message: 'Network error.' };
+  }
+}
+
+export async function listPostComplianceAuditsAction(
+  clientToken?: string,
+): Promise<AR<PostComplianceAudit[]>> {
+  try {
+    const res = await apiFetch(
+      `${BASE_URL}/api/post_compliance/audits/`,
+      {},
+      clientToken,
+    );
+    const data = await res.json();
+    if (!res.ok) return { success: false, message: errMsg(data) };
+    const audits = Array.isArray(data) ? data : (data.results ?? []);
+    return { success: true, message: 'OK', data: audits };
+  } catch (e) {
+    console.error('[listPostComplianceAuditsAction]', e);
+    return { success: false, message: 'Network error.' };
+  }
+}
+
+export async function getPostComplianceAuditAction(
+  id: number,
+  clientToken?: string,
+): Promise<AR<PostComplianceAudit>> {
+  try {
+    const res = await apiFetch(
+      `${BASE_URL}/api/post_compliance/audits/${id}/`,
+      {},
+      clientToken,
+    );
+    const data = await res.json();
+    if (!res.ok) return { success: false, message: errMsg(data) };
+    return { success: true, message: 'OK', data };
+  } catch (e) {
+    console.error('[getPostComplianceAuditAction]', e);
+    return { success: false, message: 'Network error.' };
+  }
+}
+
+export async function updatePostComplianceAuditAction(
+  id: number,
+  payload: UpdateAuditPayload,
+  clientToken?: string,
+): Promise<AR<PostComplianceAudit>> {
+  try {
+    const res = await apiFetch(
+      `${BASE_URL}/api/post_compliance/audits/${id}/`,
+      { method: 'PATCH', body: JSON.stringify(payload) },
+      clientToken,
+    );
+    const data = await res.json();
+    if (!res.ok) return { success: false, message: errMsg(data) };
+    return { success: true, message: 'Audit updated.', data };
+  } catch (e) {
+    console.error('[updatePostComplianceAuditAction]', e);
+    return { success: false, message: 'Network error.' };
+  }
+}
+
+export async function deletePostComplianceAuditAction(
+  id: number,
+  clientToken?: string,
+): Promise<AR<null>> {
+  try {
+    const res = await apiFetch(
+      `${BASE_URL}/api/post_compliance/audits/${id}/`,
+      { method: 'DELETE' },
+      clientToken,
+    );
+    if (res.status === 204) {
+      return { success: true, message: 'Audit deleted.', data: null };
+    }
+    const data = await res.json().catch(() => null);
+    if (!res.ok) return { success: false, message: errMsg(data) };
+    return { success: true, message: 'Audit deleted.', data: null };
+  } catch (e) {
+    console.error('[deletePostComplianceAuditAction]', e);
+    return { success: false, message: 'Network error.' };
+  }
+}
+
+// ─── Post Compliance Staff ────────────────────────────────────────────────────
+
+export async function createPostComplianceStaffAction(
+  payload: CreateStaffPayload,
+  clientToken?: string,
+): Promise<AR<PostComplianceStaff>> {
+  console.log('[createPostComplianceStaffAction] payload received:', payload);
+  try {
+    const res = await apiFetch(
+      `${BASE_URL}/api/post_compliance/staff/`,
+      { method: 'POST', body: JSON.stringify(payload) },
+      clientToken,
+    );
+
+    // We need to clone the response to log it, or just await json() directly
+    const text = await res.text();
+    console.log('[createPostComplianceStaffAction] DRF RESPONSE:', res.status, text);
+
+    let data;
+    try {
+      data = JSON.parse(text);
+    } catch (e) {
+      data = text;
+    }
+
+    if (!res.ok) return { success: false, message: errMsg(data) };
+    return { success: true, message: 'Staff created successfully', data: data as PostComplianceStaff };
+  } catch (e) {
+    console.error('[createPostComplianceStaffAction]', e);
+    return { success: false, message: 'Network error.' };
+  }
+}
+
+export async function listPostComplianceStaffAction(
+  clientToken?: string,
+): Promise<AR<PostComplianceStaff[]>> {
+  try {
+    const res = await apiFetch(
+      `${BASE_URL}/api/post_compliance/staff/`,
+      {},
+      clientToken,
+    );
+    const data = await res.json();
+    if (!res.ok) return { success: false, message: errMsg(data) };
+    const staff = Array.isArray(data) ? data : (data.results ?? []);
+    return { success: true, message: 'OK', data: staff };
+  } catch (e) {
+    console.error('[listPostComplianceStaffAction]', e);
+    return { success: false, message: 'Network error.' };
+  }
+}
+
+export async function getPostComplianceStaffByAuditAction(
+  auditId: number,
+  clientToken?: string,
+): Promise<AR<PostComplianceStaff[]>> {
+  try {
+    const res = await apiFetch(
+      `${BASE_URL}/api/post_compliance/staff/by-audit/${auditId}/`,
+      {},
+      clientToken,
+    );
+    const text = await res.text();
+    console.log(`[getPostComplianceStaffByAuditAction] GET by-audit/${auditId}/ ->`, res.status, text);
+
+    let data;
+    try {
+      data = JSON.parse(text);
+    } catch (e) {
+      data = text;
+    }
+
+    if (!res.ok) return { success: false, message: errMsg(data) };
+    const staff = Array.isArray(data) ? data : (data.results ?? []);
+    return { success: true, message: 'OK', data: staff };
+  } catch (e) {
+    console.error('[getPostComplianceStaffByAuditAction]', e);
+    return { success: false, message: 'Network error.' };
+  }
+}
+
+export async function getPostComplianceStaffAction(
+  id: number,
+  clientToken?: string,
+): Promise<AR<PostComplianceStaff>> {
+  try {
+    const res = await apiFetch(
+      `${BASE_URL}/api/post_compliance/staff/${id}/`,
+      {},
+      clientToken,
+    );
+    const data = await res.json();
+    if (!res.ok) return { success: false, message: errMsg(data) };
+    return { success: true, message: 'OK', data };
+  } catch (e) {
+    console.error('[getPostComplianceStaffAction]', e);
+    return { success: false, message: 'Network error.' };
+  }
+}
+
+export async function updatePostComplianceStaffAction(
+  id: number,
+  payload: UpdateStaffPayload,
+  clientToken?: string,
+): Promise<AR<PostComplianceStaff>> {
+  try {
+    const res = await apiFetch(
+      `${BASE_URL}/api/post_compliance/staff/${id}/`,
+      { method: 'PATCH', body: JSON.stringify(payload) },
+      clientToken,
+    );
+    const data = await res.json();
+    if (!res.ok) return { success: false, message: errMsg(data) };
+    return { success: true, message: 'Staff updated.', data };
+  } catch (e) {
+    console.error('[updatePostComplianceStaffAction]', e);
+    return { success: false, message: 'Network error.' };
+  }
+}
+
+/**
+ * Convenience wrapper – PATCH any subset of the staff detail fields.
+ * Uses the same PATCH endpoint; pass only the fields you want to update.
+ */
+export async function updatePostComplianceStaffDetailsAction(
+  staffId: number,
+  details: UpdateStaffPayload,
+  clientToken?: string,
+): Promise<AR<PostComplianceStaff>> {
+  return updatePostComplianceStaffAction(staffId, details, clientToken);
+}
+
+export async function deletePostComplianceStaffAction(
+  id: number,
+  clientToken?: string,
+): Promise<AR<null>> {
+  try {
+    const res = await apiFetch(
+      `${BASE_URL}/api/post_compliance/staff/${id}/`,
+      { method: 'DELETE' },
+      clientToken,
+    );
+    if (res.status === 204) {
+      return { success: true, message: 'Staff deleted.', data: null };
+    }
+    const data = await res.json().catch(() => null);
+    if (!res.ok) return { success: false, message: errMsg(data) };
+    return { success: true, message: 'Staff deleted.', data: null };
+  } catch (e) {
+    console.error('[deletePostComplianceStaffAction]', e);
+    return { success: false, message: 'Network error.' };
+  }
 }

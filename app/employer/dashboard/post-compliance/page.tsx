@@ -4,6 +4,8 @@ import React, { useEffect, useState } from 'react';
 import { useAuditStore } from '@/app/store/auditStore';
 import { LayoutDashboard, Users, FileText, ClipboardCheck, Wallet, ShieldAlert, ChevronRight, ArrowLeft } from 'lucide-react';
 import EvaluationSteps from './_components/EvaluationSteps';
+import { listPostComplianceAuditsAction, createPostComplianceAuditAction } from '@/app/employer/sections/action/action';
+import toast from 'react-hot-toast';
 
 // Step 1 Sub-pages
 import RecruitmentDocsStep from './_components/steps/RecruitmentDocsStep';
@@ -31,14 +33,59 @@ const MAIN_STEPS = [
 ];
 
 export default function PostRolePage() {
-  const { currentStep, currentSubPage, setStep, employees } = useAuditStore();
+  const { currentStep, currentSubPage, setStep, employees, auditId, auditDate, setAuditId } = useAuditStore();
   const [mounted, setMounted] = useState(false);
+  const [initializing, setInitializing] = useState(true);
 
   useEffect(() => {
     setMounted(true);
+    initAudit();
   }, []);
 
-  if (!mounted) return null;
+  const initAudit = async () => {
+    try {
+      // First try to list existing audits
+      const listRes = await listPostComplianceAuditsAction();
+      if (listRes.success && listRes.data && listRes.data.length > 0) {
+        // Use the most recent audit
+        const sorted = [...listRes.data].sort((a, b) => b.id - a.id);
+        setAuditId(sorted[0].id, sorted[0].date_created);
+      } else {
+        // Create a new audit
+        let userId: number | null = null;
+        try {
+          const raw = document.cookie
+            .split('; ')
+            .find((r) => r.startsWith('user-info='))
+            ?.split('=')
+            .slice(1)
+            .join('=');
+          if (raw) {
+            const parsed = JSON.parse(decodeURIComponent(raw));
+            userId = parsed?.id ?? null;
+          }
+        } catch { /* ignore */ }
+
+        if (userId) {
+          const createRes = await createPostComplianceAuditAction(userId);
+          if (createRes.success && createRes.data) {
+            setAuditId(createRes.data.id, createRes.data.date_created);
+          } else {
+            toast.error('Failed to initialize audit.');
+          }
+        } else {
+          toast.error('User session invalid. Please login again.');
+        }
+      }
+    } catch (error) {
+      console.error('Failed to init audit:', error);
+      toast.error('Error initializing audit.');
+    } finally {
+      setInitializing(false);
+    }
+  };
+
+  if (!mounted || initializing) return null;
 
   const handleNext = () => {
     // Logic for transitioning between sub-pages and main steps
@@ -97,7 +144,7 @@ export default function PostRolePage() {
           <div className="flex items-center gap-3">
              <div className="flex flex-col items-end mr-4">
                 <span className="text-[11px] font-black text-gray-400 uppercase tracking-widest">Active Audit</span>
-                <span className="text-[14px] font-bold text-gray-900">REF: AUD-2024-001</span>
+                <span className="text-[14px] font-bold text-gray-900">REF: AUD-{auditDate ? new Date(auditDate).getFullYear() : new Date().getFullYear()}-{auditId ? String(auditId).padStart(3, '0') : '001'}</span>
              </div>
              <div className="w-10 h-10 rounded-2xl bg-[#0852C9] flex items-center justify-center shadow-lg shadow-blue-100">
                 <FileText className="text-white" size={20} />
