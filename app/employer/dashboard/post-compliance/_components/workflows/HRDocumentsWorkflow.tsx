@@ -1,8 +1,8 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAuditStore, ComplianceStatus } from '@/app/store/auditStore';
-import { FileText, ClipboardCheck, MessageSquare, CheckCircle2, AlertTriangle, ShieldAlert, User, Search } from 'lucide-react';
+import { FileText, ClipboardCheck, MessageSquare, CheckCircle2, AlertTriangle, ShieldAlert, User, Save } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 const HR_FIELDS = [
@@ -25,15 +25,41 @@ export default function HRDocumentsWorkflow() {
   const [selectedEmpId, setSelectedEmpId] = useState<string | null>(employees[0]?.id || null);
   const [records, setRecords] = useState<HRComplianceRecord[]>([]);
 
+  // Local draft remarks — keyed by field name — so typing doesn't trigger saves
+  const [draftRemarks, setDraftRemarks] = useState<Record<string, string>>({});
+
   const selectedEmployee = employees.find(e => e.id === selectedEmpId);
 
-  const handleUpdate = (field: string, remark: string, status: ComplianceStatus) => {
+  // Reset drafts when switching employee
+  useEffect(() => {
+    if (!selectedEmpId) return;
+    const initialDrafts: Record<string, string> = {};
+    HR_FIELDS.forEach(field => {
+      const existing = records.find(r => r.employeeId === selectedEmpId && r.field === field);
+      initialDrafts[field] = existing?.remark || '';
+    });
+    setDraftRemarks(initialDrafts);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedEmpId]);
+
+  const handleStatusChange = (field: string, status: ComplianceStatus) => {
     if (!selectedEmpId) return;
     setRecords(prev => {
-        const filtered = prev.filter(r => !(r.employeeId === selectedEmpId && r.field === field));
-        return [...filtered, { employeeId: selectedEmpId, field, remark, status }];
+      const filtered = prev.filter(r => !(r.employeeId === selectedEmpId && r.field === field));
+      const existingRemark = prev.find(r => r.employeeId === selectedEmpId && r.field === field)?.remark || draftRemarks[field] || '';
+      return [...filtered, { employeeId: selectedEmpId, field, remark: existingRemark, status }];
     });
-    toast.success(`${field} categorization updated`);
+  };
+
+  const handleSaveField = (field: string) => {
+    if (!selectedEmpId) return;
+    const remark = draftRemarks[field] || '';
+    setRecords(prev => {
+      const filtered = prev.filter(r => !(r.employeeId === selectedEmpId && r.field === field));
+      const existingStatus = prev.find(r => r.employeeId === selectedEmpId && r.field === field)?.status || 'Compliant';
+      return [...filtered, { employeeId: selectedEmpId, field, remark, status: existingStatus }];
+    });
+    toast.success(`${field} remarks saved`);
   };
 
   const getRecord = (field: string) => {
@@ -87,7 +113,7 @@ export default function HRDocumentsWorkflow() {
                                  {(['Compliant', 'Partially compliant', 'Non-Compliant'] as ComplianceStatus[]).map((status) => (
                                    <button
                                      key={status}
-                                     onClick={() => handleUpdate(field, record?.remark || '', status)}
+                                     onClick={() => handleStatusChange(field, status)}
                                      className={`px-4 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all
                                        ${record?.status === status 
                                          ? status === 'Compliant' ? 'bg-green-500 text-white shadow-lg shadow-green-100' :
@@ -110,9 +136,20 @@ export default function HRDocumentsWorkflow() {
                               <textarea 
                                 className="w-full p-5 bg-gray-50 rounded-[1.5rem] text-[14px] font-medium border border-transparent outline-none focus:bg-white focus:border-blue-100 focus:ring-4 ring-blue-50/50 transition-all min-h-[100px]"
                                 placeholder={`Enter professional summary for ${field.toLowerCase()}...`}
-                                value={record?.remark || ''}
-                                onChange={(e) => handleUpdate(field, e.target.value, record?.status || 'Compliant')}
+                                value={draftRemarks[field] ?? record?.remark ?? ''}
+                                onChange={(e) =>
+                                  setDraftRemarks(prev => ({ ...prev, [field]: e.target.value }))
+                                }
                               />
+                              <div className="flex justify-end">
+                                <button
+                                  onClick={() => handleSaveField(field)}
+                                  className="flex items-center gap-2 px-5 py-2.5 bg-gray-900 text-white rounded-xl text-[12px] font-black shadow-md active:scale-95 transition-all hover:bg-gray-700"
+                                >
+                                  <Save size={14} />
+                                  Save Remarks
+                                </button>
+                              </div>
                            </div>
 
                            {record?.status && (

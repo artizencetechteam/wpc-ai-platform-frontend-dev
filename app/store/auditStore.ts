@@ -37,25 +37,33 @@ export interface AuditEmployee {
 }
 
 export interface AuditState {
+  auditId: number | null;
+  auditDate: string | null;
   companyAdded: boolean;
   employees: AuditEmployee[];
   currentStep: number;
   currentSubPage: number;
   
   // Actions
+  setAuditId: (id: number, date?: string) => void;
   addEmployee: (emp: Partial<AuditEmployee>) => void;
   updateEmployee: (id: string, updates: Partial<AuditEmployee>) => void;
   setStep: (step: number, subPage?: number) => void;
   resetAudit: () => void;
+  setEmployees: (emps: AuditEmployee[]) => void;
 }
 
 export const useAuditStore = create<AuditState>()(
   persist(
     (set) => ({
+      auditId: null,
+      auditDate: null,
       companyAdded: false,
       employees: [],
       currentStep: 0,
       currentSubPage: 0,
+
+      setAuditId: (id, date) => set({ auditId: id, auditDate: date || null }),
 
       addEmployee: (emp) => set((state) => ({
         employees: [...state.employees, {
@@ -77,12 +85,16 @@ export const useAuditStore = create<AuditState>()(
         employees: state.employees.map(e => e.id === id ? { ...e, ...updates } : e)
       })),
 
+      setEmployees: (emps) => set({ employees: emps }),
+
       setStep: (step, subPage) => set({ 
         currentStep: step, 
         currentSubPage: subPage ?? 0 
       }),
 
       resetAudit: () => set({ 
+        auditId: null,
+        auditDate: null,
         companyAdded: false, 
         employees: [], 
         currentStep: 0, 

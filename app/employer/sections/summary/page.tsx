@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, Suspense } from "react";
+import { useState, useEffect, Suspense, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import HRValidationTabs from "../_components/HRValidationTabs";
 
@@ -135,6 +135,14 @@ function SummaryPageImpl(): React.JSX.Element {
   const [comments, setComments] = useState<Record<string, string>>({});
   const [activeCommentSection, setActiveCommentSection] = useState<string | null>(null);
   const [commentText, setCommentText] = useState("");
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    if (textareaRef.current) {
+      textareaRef.current.style.height = "auto";
+      textareaRef.current.style.height = `${textareaRef.current.scrollHeight}px`;
+    }
+  }, [commentText, activeCommentSection]);
 
   useEffect(() => {
     const queryId = searchParams.get("recordId") || searchParams.get("id");
@@ -492,13 +500,14 @@ function SummaryPageImpl(): React.JSX.Element {
               Feedback: {activeCommentSection}
             </h3>
             <textarea
+              ref={textareaRef}
               value={commentText}
               onChange={(e) => setCommentText(e.target.value)}
               placeholder="Enter your feedback or comments here..."
               style={{
                 width: "100%", minHeight: "120px", padding: "12px", borderRadius: "8px",
                 border: "1px solid #CBD5E1", fontSize: "14px", fontFamily: "inherit",
-                resize: "vertical", outline: "none", marginBottom: "20px"
+                resize: "none", overflow: "hidden", outline: "none", marginBottom: "20px"
               }}
             />
             <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px" }}>

@@ -33,6 +33,8 @@ interface Transaction {
 
 interface FinancialData {
   balance?: number;
+  opening_balance?: number;
+  closing_balance?: number;
   incoming?: number;
   outgoing?: number;
   netCashFlow?: number;
@@ -84,6 +86,8 @@ interface InvestmentsStepProps {
   onPrev: () => void;
   onSave: (data: Partial<FinancialData>) => void;
   initialTransactions?: Transaction[];
+  initialOpening?: number;
+  initialClosing?: number;
 }
 
 interface ContractsSyncStepProps {
@@ -411,13 +415,15 @@ function CashFlowStep({ onNext, onPrev, onSave, initialIncoming, initialOutgoing
 
 // ─── InvestmentsStep ──────────────────────────────────────────────────────────
 
-function InvestmentsStep({ onNext, onPrev, onSave, initialTransactions }: InvestmentsStepProps): React.JSX.Element {
+function InvestmentsStep({ onNext, onPrev, onSave, initialTransactions, initialOpening, initialClosing }: InvestmentsStepProps): React.JSX.Element {
   const [amount, setAmount] = useState<string>("");
   const [reference, setReference] = useState<string>("");
   const [type, setType] = useState<"incoming" | "outgoing">("incoming");
   const [transactions, setTransactions] = useState<Transaction[]>(initialTransactions || []);
   const [isParsing, setIsParsing] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [manualOpening, setManualOpening] = useState(initialOpening != null ? String(initialOpening) : "");
+  const [manualClosing, setManualClosing] = useState(initialClosing != null ? String(initialClosing) : "");
 
   // Editing state
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -433,9 +439,15 @@ function InvestmentsStep({ onNext, onPrev, onSave, initialTransactions }: Invest
     const file = e.target.files?.[0];
     if (!file) return;
 
+    const hrRecordId = sessionStorage.getItem("current_hr_record_id");
+    const storedBankName = hrRecordId ? sessionStorage.getItem(`bank_name_${hrRecordId}`) : null;
+
     const formData = new FormData();
     formData.append("file", file);
-    formData.append("use_ocr", "true");
+    formData.append("bank_name", storedBankName || "Generic (AI Vision)");
+    formData.append("manual_opening", manualOpening.trim() || "");
+    formData.append("manual_closing", manualClosing.trim() || "");
+    formData.append("employee_name", "string");
 
     setIsParsing(true);
     const loadingToast = toast.loading("Parsing bank statement...");
@@ -485,6 +497,16 @@ function InvestmentsStep({ onNext, onPrev, onSave, initialTransactions }: Invest
           status: getTransactionStatus(t.description || t.reference || t.memo || ""),
         };
       });
+
+      // Auto-fill opening/closing balance from API response if not manually set
+      const extractedOpening = extractionResult.opening_balance ?? extractionResult.openingBalance ?? null;
+      const extractedClosing = extractionResult.closing_balance ?? extractionResult.closingBalance ?? null;
+      if (extractedOpening !== null && !manualOpening.trim()) {
+        setManualOpening(String(extractedOpening));
+      }
+      if (extractedClosing !== null && !manualClosing.trim()) {
+        setManualClosing(String(extractedClosing));
+      }
 
       if (mapped.length === 0) {
         toast.success("Parsed, but no transactions found in the statement.");
@@ -543,7 +565,22 @@ function InvestmentsStep({ onNext, onPrev, onSave, initialTransactions }: Invest
     setEditValues(null);
   };
 
-  const handleNext = (): void => { onSave({ transactions }); onNext(); };
+  // Sync manual balances with parent state in real-time
+  useEffect(() => {
+    onSave({ 
+      opening_balance: parseFloat(manualOpening) || 0, 
+      closing_balance: parseFloat(manualClosing) || 0 
+    });
+  }, [manualOpening, manualClosing]);
+
+  const handleNext = (): void => { 
+    onSave({ 
+      transactions,
+      opening_balance: parseFloat(manualOpening) || 0, 
+      closing_balance: parseFloat(manualClosing) || 0 
+    }); 
+    onNext(); 
+  };
 
   return (
     <div style={{ backgroundColor: "white", borderRadius: "10px", border: "1px solid #E2E8F0", padding: "28px 30px" }}>
@@ -585,7 +622,57 @@ function InvestmentsStep({ onNext, onPrev, onSave, initialTransactions }: Invest
           </button>
         </div>
       </div>
-      <p style={{ margin: "0 0 18px", fontSize: "13px", color: "#64748B" }}>Transactions ≥ £2,000 require reference verification. You can upload a PDF to auto-populate high-value items.</p>
+      <p style={{ margin: "0 0 16px", fontSize: "13px", color: "#64748B" }}>Transactions ≥ £2,000 require reference verification. You can upload a PDF to auto-populate high-value items.</p>
+
+      {/* Opening & Closing Balance */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px", marginBottom: "18px" }}>
+        <div>
+          <label style={{ ...lbl }}>
+            Opening Balance
+            <span style={{ marginLeft: "6px", fontSize: "11px", fontWeight: "400", color: "#94A3B8" }}>(auto-filled on upload)</span>
+          </label>
+          <div style={{ position: "relative" }}>
+            <span style={{ position: "absolute", left: "10px", top: "50%", transform: "translateY(-50%)", fontSize: "14px", color: "#64748B", pointerEvents: "none" }}>£</span>
+            <input
+              type="number"
+              min="0"
+              step="0.01"
+              value={manualOpening}
+              onChange={(e) => setManualOpening(e.target.value)}
+              placeholder="0.00"
+              style={{
+                ...inputStyle,
+                paddingLeft: "26px",
+                backgroundColor: manualOpening ? "#F0FDF4" : "white",
+                transition: "border-color 0.2s, background-color 0.2s",
+              }}
+            />
+          </div>
+        </div>
+        <div>
+          <label style={{ ...lbl }}>
+            Closing Balance
+            <span style={{ marginLeft: "6px", fontSize: "11px", fontWeight: "400", color: "#94A3B8" }}>(auto-filled on upload)</span>
+          </label>
+          <div style={{ position: "relative" }}>
+            <span style={{ position: "absolute", left: "10px", top: "50%", transform: "translateY(-50%)", fontSize: "14px", color: "#64748B", pointerEvents: "none" }}>£</span>
+            <input
+              type="number"
+              min="0"
+              step="0.01"
+              value={manualClosing}
+              onChange={(e) => setManualClosing(e.target.value)}
+              placeholder="0.00"
+              style={{
+                ...inputStyle,
+                paddingLeft: "26px",
+                backgroundColor: manualClosing ? "#F0FDF4" : "white",
+                transition: "border-color 0.2s, background-color 0.2s",
+              }}
+            />
+          </div>
+        </div>
+      </div>
 
       {/* Rules box */}
       <div style={{ backgroundColor: "#F8FAFC", borderRadius: "8px", border: "1px solid #E2E8F0", padding: "14px 18px", marginBottom: "18px" }}>
@@ -636,126 +723,126 @@ function InvestmentsStep({ onNext, onPrev, onSave, initialTransactions }: Invest
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: "10px" }}>
               <div style={{ position: "relative" }}>
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#9CA3AF" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ position: "absolute", left: "10px", top: "50%", transform: "translateY(-50%)" }}>
-                  <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                  <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
                 </svg>
                 <input type="text" placeholder="Date..." value={searchDate} onChange={(e) => setSearchDate(e.target.value)} style={{ padding: "8px 12px 8px 30px", border: "1.5px solid #E2E8F0", borderRadius: "6px", fontSize: "13px", outline: "none", width: "100%", boxSizing: "border-box" }} />
               </div>
               <div style={{ position: "relative" }}>
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#9CA3AF" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ position: "absolute", left: "10px", top: "50%", transform: "translateY(-50%)" }}>
-                  <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                  <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
                 </svg>
                 <input type="text" placeholder="Amount..." value={searchAmount} onChange={(e) => setSearchAmount(e.target.value)} style={{ padding: "8px 12px 8px 30px", border: "1.5px solid #E2E8F0", borderRadius: "6px", fontSize: "13px", outline: "none", width: "100%", boxSizing: "border-box" }} />
               </div>
               <div style={{ position: "relative" }}>
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#9CA3AF" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ position: "absolute", left: "10px", top: "50%", transform: "translateY(-50%)" }}>
-                  <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                  <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
                 </svg>
                 <input type="text" placeholder="Type..." value={searchType} onChange={(e) => setSearchType(e.target.value)} style={{ padding: "8px 12px 8px 30px", border: "1.5px solid #E2E8F0", borderRadius: "6px", fontSize: "13px", outline: "none", width: "100%", boxSizing: "border-box" }} />
               </div>
               <div style={{ position: "relative" }}>
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#9CA3AF" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ position: "absolute", left: "10px", top: "50%", transform: "translateY(-50%)" }}>
-                  <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                  <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
                 </svg>
                 <input type="text" placeholder="Reference / Note..." value={searchReference} onChange={(e) => setSearchReference(e.target.value)} style={{ padding: "8px 12px 8px 30px", border: "1.5px solid #E2E8F0", borderRadius: "6px", fontSize: "13px", outline: "none", width: "100%", boxSizing: "border-box" }} />
               </div>
             </div>
           </div>
           <div style={{ border: "1px solid #E2E8F0", borderRadius: "8px", overflow: "hidden" }}>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1.2fr 1fr 2fr 1fr 1fr", padding: "10px 14px", backgroundColor: "#F8FAFC", borderBottom: "1px solid #E2E8F0" }}>
-            {["Date", "Amount", "Type", "Reference", "Status", "Actions"].map((h) => <div key={h} style={{ fontSize: "12.5px", color: "#64748B", fontWeight: "600" }}>{h}</div>)}
-          </div>
-          <div style={{ maxHeight: "400px", overflowY: "auto" }}>
-            {transactions.filter(t => {
-              if (searchDate && (!t.date || !t.date.toLowerCase().includes(searchDate.toLowerCase()))) return false;
-              if (searchAmount && !String(t.amount).includes(searchAmount)) return false;
-              if (searchType && !t.type.toLowerCase().includes(searchType.toLowerCase())) return false;
-              if (searchReference && !t.reference.toLowerCase().includes(searchReference.toLowerCase())) return false;
-              return true;
-            }).map((t) => {
-              const isEditing = editingId === t.id;
-              return (
-                <div key={t.id} style={{ display: "grid", gridTemplateColumns: "1fr 1.2fr 1fr 2fr 1fr 1fr", padding: "12px 4px", borderBottom: "1px solid #F1F5F9", alignItems: "center" }}>
-                  {isEditing ? (
-                    <>
-                      <div style={{ fontSize: "13px", color: "#374151", padding: "4px" }}>{editValues?.date || "—"}</div>
-                      <div><input type="number" value={editValues?.amount} onChange={(e) => setEditValues(prev => prev ? { ...prev, amount: parseFloat(e.target.value) || 0 } : null)} style={{ ...inputStyle, padding: "4px 8px" }} /></div>
-                      <div>
-                        <select value={editValues?.type} onChange={(e) => setEditValues(prev => prev ? { ...prev, type: e.target.value as "incoming" | "outgoing" } : null)} style={{ ...inputStyle, padding: "4px 8px" }}>
-                          <option value="incoming">Incoming</option>
-                          <option value="outgoing">Outgoing</option>
-                        </select>
-                      </div>
-                      <div><input type="text" value={editValues?.reference} onChange={(e) => setEditValues(prev => prev ? { ...prev, reference: e.target.value } : null)} style={{ ...inputStyle, padding: "4px 8px" }} /></div>
-                      <div />
-                      <div style={{ display: "flex", gap: "8px" }}>
-                        <button onClick={handleEditSave} title="Save" style={iconBtn}><CheckIcon /></button>
-                        <button onClick={handleEditCancel} title="Cancel" style={iconBtn}><XIcon /></button>
-                      </div>
-                    </>
-                  ) : (
-                    <>
-                      <div
-                        style={{ fontSize: "13px", color: "#374151", padding: "4px", fontVariantNumeric: "tabular-nums" }}
-                      >
-                        {t.date || "—"}
-                      </div>
-                      <div
-                        onClick={() => handleEditStart(t)}
-                        title="Click to edit"
-                        style={{ fontSize: "14px", color: "#0F172A", fontWeight: "500", cursor: "pointer", padding: "4px", borderRadius: "4px", transition: "background 0.2s" }}
-                        onMouseOver={(e) => e.currentTarget.style.backgroundColor = "#F1F5F9"}
-                        onMouseOut={(e) => e.currentTarget.style.backgroundColor = "transparent"}
-                      >
-                        £{t.amount.toLocaleString()}
-                        {t.amount >= 2000 && (
-                          <span style={{
-                            marginLeft: "8px",
-                            fontSize: "10px",
-                            backgroundColor: "#F0F9FF",
-                            color: "#0369A1",
-                            padding: "2px 6px",
-                            borderRadius: "4px",
-                            border: "1px solid #B9E6FE",
-                            verticalAlign: "middle"
-                          }}>
-                            Large
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1.2fr 1fr 2fr 1fr 1fr", padding: "10px 14px", backgroundColor: "#F8FAFC", borderBottom: "1px solid #E2E8F0" }}>
+              {["Date", "Amount", "Type", "Reference", "Status", "Actions"].map((h) => <div key={h} style={{ fontSize: "12.5px", color: "#64748B", fontWeight: "600" }}>{h}</div>)}
+            </div>
+            <div style={{ maxHeight: "400px", overflowY: "auto" }}>
+              {transactions.filter(t => {
+                if (searchDate && (!t.date || !t.date.toLowerCase().includes(searchDate.toLowerCase()))) return false;
+                if (searchAmount && !String(t.amount).includes(searchAmount)) return false;
+                if (searchType && !t.type.toLowerCase().includes(searchType.toLowerCase())) return false;
+                if (searchReference && !t.reference.toLowerCase().includes(searchReference.toLowerCase())) return false;
+                return true;
+              }).map((t) => {
+                const isEditing = editingId === t.id;
+                return (
+                  <div key={t.id} style={{ display: "grid", gridTemplateColumns: "1fr 1.2fr 1fr 2fr 1fr 1fr", padding: "12px 4px", borderBottom: "1px solid #F1F5F9", alignItems: "center" }}>
+                    {isEditing ? (
+                      <>
+                        <div style={{ fontSize: "13px", color: "#374151", padding: "4px" }}>{editValues?.date || "—"}</div>
+                        <div><input type="number" value={editValues?.amount} onChange={(e) => setEditValues(prev => prev ? { ...prev, amount: parseFloat(e.target.value) || 0 } : null)} style={{ ...inputStyle, padding: "4px 8px" }} /></div>
+                        <div>
+                          <select value={editValues?.type} onChange={(e) => setEditValues(prev => prev ? { ...prev, type: e.target.value as "incoming" | "outgoing" } : null)} style={{ ...inputStyle, padding: "4px 8px" }}>
+                            <option value="incoming">Incoming</option>
+                            <option value="outgoing">Outgoing</option>
+                          </select>
+                        </div>
+                        <div><input type="text" value={editValues?.reference} onChange={(e) => setEditValues(prev => prev ? { ...prev, reference: e.target.value } : null)} style={{ ...inputStyle, padding: "4px 8px" }} /></div>
+                        <div />
+                        <div style={{ display: "flex", gap: "8px" }}>
+                          <button onClick={handleEditSave} title="Save" style={iconBtn}><CheckIcon /></button>
+                          <button onClick={handleEditCancel} title="Cancel" style={iconBtn}><XIcon /></button>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <div
+                          style={{ fontSize: "13px", color: "#374151", padding: "4px", fontVariantNumeric: "tabular-nums" }}
+                        >
+                          {t.date || "—"}
+                        </div>
+                        <div
+                          onClick={() => handleEditStart(t)}
+                          title="Click to edit"
+                          style={{ fontSize: "14px", color: "#0F172A", fontWeight: "500", cursor: "pointer", padding: "4px", borderRadius: "4px", transition: "background 0.2s" }}
+                          onMouseOver={(e) => e.currentTarget.style.backgroundColor = "#F1F5F9"}
+                          onMouseOut={(e) => e.currentTarget.style.backgroundColor = "transparent"}
+                        >
+                          £{t.amount.toLocaleString()}
+                          {t.amount >= 2000 && (
+                            <span style={{
+                              marginLeft: "8px",
+                              fontSize: "10px",
+                              backgroundColor: "#F0F9FF",
+                              color: "#0369A1",
+                              padding: "2px 6px",
+                              borderRadius: "4px",
+                              border: "1px solid #B9E6FE",
+                              verticalAlign: "middle"
+                            }}>
+                              Large
+                            </span>
+                          )}
+                        </div>
+                        <div
+                          onClick={() => handleEditStart(t)}
+                          title="Click to edit"
+                          style={{ fontSize: "13.5px", color: "#374151", textTransform: "capitalize", cursor: "pointer", padding: "4px", borderRadius: "4px", transition: "background 0.2s" }}
+                          onMouseOver={(e) => e.currentTarget.style.backgroundColor = "#F1F5F9"}
+                          onMouseOut={(e) => e.currentTarget.style.backgroundColor = "transparent"}
+                        >
+                          {t.type}
+                        </div>
+                        <div
+                          onClick={() => handleEditStart(t)}
+                          title="Click to edit"
+                          style={{ fontSize: "13.5px", color: "#374151", cursor: "pointer", padding: "4px", borderRadius: "4px", transition: "background 0.2s" }}
+                          onMouseOver={(e) => e.currentTarget.style.backgroundColor = "#F1F5F9"}
+                          onMouseOut={(e) => e.currentTarget.style.backgroundColor = "transparent"}
+                        >
+                          {t.reference}
+                        </div>
+                        <div>
+                          <span style={{ display: "inline-flex", alignItems: "center", gap: "5px", padding: "3px 12px", borderRadius: "20px", fontSize: "12px", fontWeight: "600", backgroundColor: t.status === "ok" ? "#0852C9" : "#DC2626", color: "white" }}>
+                            <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><circle cx="5" cy="5" r="4" stroke="white" strokeWidth="1.2" fill="none" />{t.status === "ok" ? <path d="M3 5l1.5 1.5L7 3.5" stroke="white" strokeWidth="1.2" strokeLinecap="round" /> : <path d="M3.5 3.5l3 3M6.5 3.5l-3 3" stroke="white" strokeWidth="1.2" strokeLinecap="round" />}</svg>
+                            {t.status === "ok" ? "OK" : "Flag"}
                           </span>
-                        )}
-                      </div>
-                      <div
-                        onClick={() => handleEditStart(t)}
-                        title="Click to edit"
-                        style={{ fontSize: "13.5px", color: "#374151", textTransform: "capitalize", cursor: "pointer", padding: "4px", borderRadius: "4px", transition: "background 0.2s" }}
-                        onMouseOver={(e) => e.currentTarget.style.backgroundColor = "#F1F5F9"}
-                        onMouseOut={(e) => e.currentTarget.style.backgroundColor = "transparent"}
-                      >
-                        {t.type}
-                      </div>
-                      <div
-                        onClick={() => handleEditStart(t)}
-                        title="Click to edit"
-                        style={{ fontSize: "13.5px", color: "#374151", cursor: "pointer", padding: "4px", borderRadius: "4px", transition: "background 0.2s" }}
-                        onMouseOver={(e) => e.currentTarget.style.backgroundColor = "#F1F5F9"}
-                        onMouseOut={(e) => e.currentTarget.style.backgroundColor = "transparent"}
-                      >
-                        {t.reference}
-                      </div>
-                      <div>
-                        <span style={{ display: "inline-flex", alignItems: "center", gap: "5px", padding: "3px 12px", borderRadius: "20px", fontSize: "12px", fontWeight: "600", backgroundColor: t.status === "ok" ? "#0852C9" : "#DC2626", color: "white" }}>
-                          <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><circle cx="5" cy="5" r="4" stroke="white" strokeWidth="1.2" fill="none" />{t.status === "ok" ? <path d="M3 5l1.5 1.5L7 3.5" stroke="white" strokeWidth="1.2" strokeLinecap="round" /> : <path d="M3.5 3.5l3 3M6.5 3.5l-3 3" stroke="white" strokeWidth="1.2" strokeLinecap="round" />}</svg>
-                          {t.status === "ok" ? "OK" : "Flag"}
-                        </span>
-                      </div>
-                      <div style={{ display: "flex", gap: "8px" }}>
-                        <button onClick={() => handleDelete(t.id)} title="Delete" style={{ ...iconBtn, color: "#DC2626" }}><TrashIcon /></button>
-                      </div>
-                    </>
-                  )}
-                </div>
-              );
-            })}
+                        </div>
+                        <div style={{ display: "flex", gap: "8px" }}>
+                          <button onClick={() => handleDelete(t.id)} title="Delete" style={{ ...iconBtn, color: "#DC2626" }}><TrashIcon /></button>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
           </div>
-        </div>
         </div>
       )}
 
@@ -885,7 +972,15 @@ function FinancialPageImpl(): React.JSX.Element {
     // Restore previously-saved financial data so it survives full-page navigation
     try {
       const f = sessionStorage.getItem("hr_financial_data");
-      if (f) setFinancialData(JSON.parse(f) as FinancialData);
+      if (f) {
+        const parsed = JSON.parse(f) as FinancialData;
+        // If closing_balance was extracted from the company page upload but
+        // the user hasn't manually set a balance yet, pre-fill it.
+        if (parsed.closing_balance !== undefined && parsed.balance === undefined) {
+          parsed.balance = parseFloat(String(parsed.closing_balance)) || undefined;
+        }
+        setFinancialData(parsed);
+      }
     } catch { }
 
     setHydrated(true);
@@ -938,7 +1033,16 @@ function FinancialPageImpl(): React.JSX.Element {
         )}
         {hydrated && step === "balance" && <BalanceStep onNext={() => { handleNext("balance"); }} onSave={handleSave} initialBalance={financialData.balance} />}
         {hydrated && step === "cashflow" && <CashFlowStep onNext={() => handleNext("cashflow")} onPrev={() => setStep("balance")} onSave={handleSave} initialIncoming={financialData.incoming} initialOutgoing={financialData.outgoing} />}
-        {hydrated && step === "investments" && <InvestmentsStep onNext={() => handleNext("investments")} onPrev={() => setStep("cashflow")} onSave={handleSave} initialTransactions={financialData.transactions} />}
+        {hydrated && step === "investments" && (
+          <InvestmentsStep 
+            onNext={() => handleNext("investments")} 
+            onPrev={() => setStep("cashflow")} 
+            onSave={handleSave} 
+            initialTransactions={financialData.transactions} 
+            initialOpening={financialData.opening_balance}
+            initialClosing={financialData.closing_balance}
+          />
+        )}
         {hydrated && step === "contracts" && <ContractsSyncStep onComplete={handleComplete} onPrev={() => setStep("investments")} savedContracts={savedContracts} onSave={handleSave} initialPaymentsReflected={financialData.paymentsReflected} initialFutureEngagement={financialData.futureEngagement} />}
 
         <div style={{ marginTop: "20px" }}>

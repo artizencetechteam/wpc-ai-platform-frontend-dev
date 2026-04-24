@@ -97,6 +97,8 @@ function CompanyPageImpl() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isParsing, setIsParsing] = useState(false);
   const [uploadedFileName, setUploadedFileName] = useState("");
+  const [manualOpening, setManualOpening] = useState("");
+  const [manualClosing, setManualClosing] = useState("");
 
   const [transactions, setTransactions] = useState<any[]>([]);
   const [searchDate, setSearchDate] = useState("");
@@ -142,7 +144,7 @@ function CompanyPageImpl() {
       const prev = prevStr ? JSON.parse(prevStr) : {};
       prev.transactions = txs;
       sessionStorage.setItem("hr_financial_data", JSON.stringify(prev));
-    } catch {}
+    } catch { }
   };
 
   useEffect(() => {
@@ -159,7 +161,10 @@ function CompanyPageImpl() {
 
     const formData = new FormData();
     formData.append("file", file);
-    formData.append("use_ocr", "true");
+    formData.append("bank_name", bankName);
+    formData.append("manual_opening", manualOpening.trim() || "");
+    formData.append("manual_closing", manualClosing.trim() || "");
+    formData.append("employee_name", "string");
 
     setIsParsing(true);
     const loadingToast = toast.loading("Parsing bank statement...");
@@ -199,6 +204,16 @@ function CompanyPageImpl() {
         };
       });
 
+      // Auto-fill opening/closing balance from API response if not manually set
+      const extractedOpening = extractionResult.opening_balance ?? extractionResult.openingBalance ?? null;
+      const extractedClosing = extractionResult.closing_balance ?? extractionResult.closingBalance ?? null;
+      if (extractedOpening !== null && !manualOpening.trim()) {
+        setManualOpening(String(extractedOpening));
+      }
+      if (extractedClosing !== null && !manualClosing.trim()) {
+        setManualClosing(String(extractedClosing));
+      }
+
       if (mapped.length === 0) {
         toast.success("Parsed, but no transactions found in the statement.");
       } else {
@@ -206,11 +221,13 @@ function CompanyPageImpl() {
         setTransactions(mapped);
         toast.success(`Successfully parsed ${mapped.length} transactions.`);
         try {
-           const prevStr = sessionStorage.getItem("hr_financial_data");
-           const prev = prevStr ? JSON.parse(prevStr) : {};
-           prev.transactions = mapped;
-           sessionStorage.setItem("hr_financial_data", JSON.stringify(prev));
-        } catch {}
+          const prevStr = sessionStorage.getItem("hr_financial_data");
+          const prev = prevStr ? JSON.parse(prevStr) : {};
+          prev.transactions = mapped;
+          prev.opening_balance = extractedOpening !== null && !manualOpening.trim() ? String(extractedOpening) : (manualOpening.trim() || "0");
+          prev.closing_balance = extractedClosing !== null && !manualClosing.trim() ? String(extractedClosing) : (manualClosing.trim() || "0");
+          sessionStorage.setItem("hr_financial_data", JSON.stringify(prev));
+        } catch { }
       }
     } catch (error: any) {
       console.error("Upload error:", error);
@@ -301,9 +318,20 @@ function CompanyPageImpl() {
         // Retrieve company and bank name from storage if it exists for this record
         const savedName = sessionStorage.getItem(`company_name_${recordId}`);
         if (savedName) setCompanyName(savedName);
-        
+
         const savedBank = sessionStorage.getItem(`bank_name_${recordId}`);
         if (savedBank) setBankName(savedBank);
+
+        // Restore manual balances and transactions from shared financial data
+        const finDataStr = sessionStorage.getItem("hr_financial_data");
+        if (finDataStr) {
+          try {
+            const finData = JSON.parse(finDataStr);
+            if (finData.transactions) setTransactions(finData.transactions);
+            if (finData.opening_balance) setManualOpening(String(finData.opening_balance));
+            if (finData.closing_balance) setManualClosing(String(finData.closing_balance));
+          } catch { /* ignore */ }
+        }
       }
     } catch (e) {
       console.error("initHRRecord error:", e);
@@ -313,14 +341,34 @@ function CompanyPageImpl() {
     }
   }
 
-
+  // Persist manual balance changes in real-time
+  useEffect(() => {
+    if (loading) return;
+    try {
+      const prevStr = sessionStorage.getItem("hr_financial_data");
+      const prev = prevStr ? JSON.parse(prevStr) : {};
+      prev.opening_balance = manualOpening;
+      prev.closing_balance = manualClosing;
+      sessionStorage.setItem("hr_financial_data", JSON.stringify(prev));
+    } catch { }
+  }, [manualOpening, manualClosing, loading]);
 
   const handleContinue = () => {
     if (!companyName.trim() || !bankName) return;
     if (hrRecordId) {
       sessionStorage.setItem(`company_name_${hrRecordId}`, companyName.trim());
       sessionStorage.setItem(`bank_name_${hrRecordId}`, bankName);
-      
+
+      // Final sync of financial data before moving to next page
+      try {
+        const prevStr = sessionStorage.getItem("hr_financial_data");
+        const prev = prevStr ? JSON.parse(prevStr) : {};
+        prev.opening_balance = manualOpening;
+        prev.closing_balance = manualClosing;
+        prev.transactions = transactions;
+        sessionStorage.setItem("hr_financial_data", JSON.stringify(prev));
+      } catch { }
+
       // Mark company step as complete in progress map
       const p = { ...tabProgress, company: true };
       sessionStorage.setItem("hr_progress", JSON.stringify(p));
@@ -395,17 +443,65 @@ function CompanyPageImpl() {
                 onBlur={(e) => e.target.style.borderColor = "#D1D5DB"}
               >
                 <option value="">Select a Bank...</option>
-                <option value="Barclay">Barclay</option>
-                <option value="Bank of ireland">Bank of ireland</option>
-                <option value="HSBC">HSBC</option>
-                <option value="Lloyds">Lloyds</option>
-                <option value="Monzo">Monzo</option>
-                <option value="TSB Bank">TSB Bank</option>
-                <option value="Santander bank">Santander bank</option>
-                <option value="Natwest bank">Natwest bank</option>
-                <option value="Virgin money bank">Virgin money bank</option>
-                <option value="Bank of scotland">Bank of scotland</option>
+                <option value="Generic (AI Vision)">Generic (AI Vision)</option>
+                <option value="NATWEST">NATWEST</option>
+                <option value="SANTANDER">SANTANDER</option>
+                <option value="VIRGIN">VIRGIN</option>
               </select>
+            </div>
+
+            {/* Opening & Closing Balance */}
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px", marginBottom: "24px" }}>
+              <div>
+                <label style={{ display: "block", fontSize: "14px", fontWeight: "600", color: "#374151", marginBottom: "8px" }}>
+                  Opening Balance
+                  <span style={{ marginLeft: "6px", fontSize: "12px", fontWeight: "400", color: "#94A3B8" }}>(auto-filled on upload)</span>
+                </label>
+                <div style={{ position: "relative" }}>
+                  <span style={{ position: "absolute", left: "12px", top: "50%", transform: "translateY(-50%)", fontSize: "15px", color: "#64748B", pointerEvents: "none" }}>£</span>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={manualOpening}
+                    onChange={(e) => setManualOpening(e.target.value)}
+                    placeholder="0.00"
+                    style={{
+                      width: "100%", padding: "12px 16px 12px 28px", borderRadius: "10px",
+                      border: "1.5px solid #D1D5DB", fontSize: "15px", outline: "none",
+                      boxSizing: "border-box", color: "#0F172A", backgroundColor: manualOpening ? "#F0FDF4" : "white",
+                      transition: "border-color 0.2s, background-color 0.2s",
+                    }}
+                    onFocus={(e) => e.target.style.borderColor = "#0852C9"}
+                    onBlur={(e) => e.target.style.borderColor = "#D1D5DB"}
+                  />
+                </div>
+              </div>
+              <div>
+                <label style={{ display: "block", fontSize: "14px", fontWeight: "600", color: "#374151", marginBottom: "8px" }}>
+                  Closing Balance
+                  <span style={{ marginLeft: "6px", fontSize: "12px", fontWeight: "400", color: "#94A3B8" }}>(auto-filled on upload)</span>
+                </label>
+                <div style={{ position: "relative" }}>
+                  <span style={{ position: "absolute", left: "12px", top: "50%", transform: "translateY(-50%)", fontSize: "15px", color: "#64748B", pointerEvents: "none" }}>£</span>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={manualClosing}
+                    onChange={(e) => setManualClosing(e.target.value)}
+                    placeholder="0.00"
+                    style={{
+                      width: "100%", padding: "12px 16px 12px 28px", borderRadius: "10px",
+                      border: "1.5px solid #D1D5DB", fontSize: "15px", outline: "none",
+                      boxSizing: "border-box", color: "#0F172A", backgroundColor: manualClosing ? "#F0FDF4" : "white",
+                      transition: "border-color 0.2s, background-color 0.2s",
+                    }}
+                    onFocus={(e) => e.target.style.borderColor = "#0852C9"}
+                    onBlur={(e) => e.target.style.borderColor = "#D1D5DB"}
+                  />
+                </div>
+              </div>
             </div>
 
             <div style={{ marginBottom: transactions.length > 0 ? "12px" : "24px" }}>
@@ -453,25 +549,25 @@ function CompanyPageImpl() {
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: "10px" }}>
                     <div style={{ position: "relative" }}>
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#9CA3AF" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ position: "absolute", left: "10px", top: "50%", transform: "translateY(-50%)" }}>
-                        <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                        <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
                       </svg>
                       <input type="text" placeholder="Date..." value={searchDate} onChange={(e) => setSearchDate(e.target.value)} style={{ padding: "8px 12px 8px 30px", border: "1.5px solid #E2E8F0", borderRadius: "6px", fontSize: "13px", outline: "none", width: "100%", boxSizing: "border-box" }} />
                     </div>
                     <div style={{ position: "relative" }}>
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#9CA3AF" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ position: "absolute", left: "10px", top: "50%", transform: "translateY(-50%)" }}>
-                        <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                        <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
                       </svg>
                       <input type="text" placeholder="Amount..." value={searchAmount} onChange={(e) => setSearchAmount(e.target.value)} style={{ padding: "8px 12px 8px 30px", border: "1.5px solid #E2E8F0", borderRadius: "6px", fontSize: "13px", outline: "none", width: "100%", boxSizing: "border-box" }} />
                     </div>
                     <div style={{ position: "relative" }}>
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#9CA3AF" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ position: "absolute", left: "10px", top: "50%", transform: "translateY(-50%)" }}>
-                        <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                        <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
                       </svg>
                       <input type="text" placeholder="Type..." value={searchType} onChange={(e) => setSearchType(e.target.value)} style={{ padding: "8px 12px 8px 30px", border: "1.5px solid #E2E8F0", borderRadius: "6px", fontSize: "13px", outline: "none", width: "100%", boxSizing: "border-box" }} />
                     </div>
                     <div style={{ position: "relative" }}>
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#9CA3AF" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ position: "absolute", left: "10px", top: "50%", transform: "translateY(-50%)" }}>
-                        <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                        <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
                       </svg>
                       <input type="text" placeholder="Reference / Note..." value={searchReference} onChange={(e) => setSearchReference(e.target.value)} style={{ padding: "8px 12px 8px 30px", border: "1.5px solid #E2E8F0", borderRadius: "6px", fontSize: "13px", outline: "none", width: "100%", boxSizing: "border-box" }} />
                     </div>
