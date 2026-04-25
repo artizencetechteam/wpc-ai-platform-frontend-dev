@@ -1,6 +1,7 @@
 'use server';
 
 import { cookies } from 'next/headers';
+import { refreshTokenAction } from '@/app/auth/_action/auth.action';
 
 const BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://37.27.113.235:6767';
 
@@ -53,12 +54,33 @@ async function apiFetch(
   clientToken?: string,
 ): Promise<Response> {
   const { accessToken, sessionToken } = await resolveToken(clientToken);
-  const res = await fetch(url, {
+  let res = await fetch(url, {
     ...options,
     headers: makeHeaders(accessToken, sessionToken),
     cache: 'no-store',
   });
+
   console.log(`[apiFetch] ${options.method ?? 'GET'} ${url} → ${res.status}`);
+
+  // Auto-refresh logic for Server Actions
+  if (res.status === 401) {
+    console.log('[apiFetch] 401 Detected. Attempting token refresh...');
+    const refreshResult = await refreshTokenAction();
+    
+    if (refreshResult.success && refreshResult.accessToken) {
+      console.log('[apiFetch] Refresh successful. Retrying original request...');
+      // Retry with new token
+      res = await fetch(url, {
+        ...options,
+        headers: makeHeaders(refreshResult.accessToken, sessionToken),
+        cache: 'no-store',
+      });
+      console.log(`[apiFetch] Retry result → ${res.status}`);
+    } else {
+      console.warn('[apiFetch] Refresh failed or no new token. Returning original 401.');
+    }
+  }
+
   return res;
 }
 
