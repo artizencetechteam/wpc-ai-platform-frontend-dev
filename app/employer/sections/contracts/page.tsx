@@ -3,6 +3,8 @@
 import { useState, useEffect, useRef, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import HRValidationTabs from "../_components/HRValidationTabs";
+import { updateHRValidationRecordAction, listHRValidationRecordsAction } from "@/app/employer/sections/action/action";
+import { getClientToken } from "@/app/employer/sections/company/page";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -268,7 +270,17 @@ function ContractsPageImpl(): React.JSX.Element {
   useEffect(() => {
     const queryId = searchParams.get("recordId") || searchParams.get("id");
     const id = queryId || sessionStorage.getItem("current_hr_record_id");
-    if (id) setRecordId(Number(id));
+    const parsedId = id ? Number(id) : null;
+    setRecordId(parsedId);
+
+    if (parsedId) {
+      // Load saved results
+      (async () => {
+        const saved = await getSavedResults(parsedId);
+        if (saved.business_nature) setBusinessNature(saved.business_nature);
+        if (saved.contracts && Array.isArray(saved.contracts)) setContracts(saved.contracts);
+      })();
+    }
   }, [searchParams]);
 
   const handleAddContract = (contract: Contract): void => {
@@ -276,10 +288,35 @@ function ContractsPageImpl(): React.JSX.Element {
     setShowForm(false);
   };
 
-  const handleContinue = (): void => {
+  const handleContinue = async (): Promise<void> => {
     markComplete("contracts");
+
+    if (recordId) {
+      const token = getClientToken();
+      await updateHRValidationRecordAction(recordId, {
+        result_complete_sections: {
+          ...(await getSavedResults(recordId)),
+          business_nature: businessNature,
+          contracts_count: contracts.length,
+          contracts: contracts,
+        }
+      }, token);
+    }
+
     router.push(`/employer/sections/financial?recordId=${recordId}`);
   };
+
+  async function getSavedResults(id: number) {
+    try {
+      const token = getClientToken();
+      const res = await listHRValidationRecordsAction(token);
+      if (res.success && res.data) {
+        const record = res.data.find(r => r.id === id);
+        return record?.result_complete_sections || {};
+      }
+      return {};
+    } catch { return {}; }
+  }
 
   const summary = getSummary(contracts);
   const hasContracts = contracts.length > 0;

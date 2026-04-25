@@ -5,6 +5,13 @@ import { useRouter, useSearchParams } from "next/navigation";
 import axios from "axios";
 import toast from "react-hot-toast";
 import HRValidationTabs from "../_components/HRValidationTabs";
+import { 
+  updateHRValidationRecordAction, 
+  listFinancialRecordsAction, 
+  createFinancialRecordAction, 
+  updateFinancialRecordAction 
+} from "@/app/employer/sections/action/action";
+import { getClientToken } from "@/app/employer/sections/company/page";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -955,6 +962,7 @@ function FinancialPageImpl(): React.JSX.Element {
   const [financialData, setFinancialData] = useState<FinancialData>({});
   const [savedContracts, setSavedContracts] = useState<SavedContract[]>([]);
   const [recordId, setRecordId] = useState<number | null>(null);
+  const [financialRecordId, setFinancialRecordId] = useState<number | null>(null);
   // hydrated: true once sessionStorage has been read, so step components
   // always mount with the correct initial values (not empty defaults)
   const [hydrated, setHydrated] = useState<boolean>(false);
@@ -970,20 +978,50 @@ function FinancialPageImpl(): React.JSX.Element {
     } catch { }
 
     // Restore previously-saved financial data so it survives full-page navigation
+    let localData: FinancialData = {};
     try {
       const f = sessionStorage.getItem("hr_financial_data");
       if (f) {
-        const parsed = JSON.parse(f) as FinancialData;
-        // If closing_balance was extracted from the company page upload but
-        // the user hasn't manually set a balance yet, pre-fill it.
-        if (parsed.closing_balance !== undefined && parsed.balance === undefined) {
-          parsed.balance = parseFloat(String(parsed.closing_balance)) || undefined;
+        localData = JSON.parse(f) as FinancialData;
+        if (localData.closing_balance !== undefined && localData.balance === undefined) {
+          localData.balance = parseFloat(String(localData.closing_balance)) || undefined;
         }
-        setFinancialData(parsed);
+        setFinancialData(localData);
       }
     } catch { }
 
-    setHydrated(true);
+    if (id) {
+      const numId = Number(id);
+      setRecordId(numId);
+      
+      // Fetch financial records from the backend
+      (async () => {
+        try {
+          const token = getClientToken();
+          const res = await listFinancialRecordsAction(token);
+          if (res.success && res.data) {
+            const finRecord = res.data.find(r => r.HRValidationRecord_id === numId);
+            if (finRecord) {
+              setFinancialRecordId(finRecord.id);
+              setFinancialData(prev => ({
+                ...prev,
+                balance: finRecord.current_closing_balance_gbp != null ? parseFloat(finRecord.current_closing_balance_gbp) : prev.balance,
+                incoming: finRecord.total_incoming_gbp_credits != null ? parseFloat(finRecord.total_incoming_gbp_credits) : prev.incoming,
+                outgoing: finRecord.total_outgoing_gbp_debits != null ? parseFloat(finRecord.total_outgoing_gbp_debits) : prev.outgoing,
+                paymentsReflected: finRecord.payments_reflected_in_bank === true ? "yes" : finRecord.payments_reflected_in_bank === false ? "no" : prev.paymentsReflected,
+                futureEngagement: finRecord.is_future_engagement === true ? "yes" : finRecord.is_future_engagement === false ? "no" : prev.futureEngagement,
+              }));
+            }
+          }
+        } catch (err) {
+          console.error("Error fetching financial records:", err);
+        } finally {
+          setHydrated(true);
+        }
+      })();
+    } else {
+      setHydrated(true);
+    }
   }, [searchParams]);
 
   const stepIds = ["balance", "cashflow", "investments", "contracts"];
@@ -1009,8 +1047,38 @@ function FinancialPageImpl(): React.JSX.Element {
     });
   };
 
-  const handleComplete = (): void => {
+  const handleComplete = async (): Promise<void> => {
     markComplete("financial");
+
+    if (recordId) {
+      const token = getClientToken();
+      
+      // Save global transactions in HR Validation Record
+      await updateHRValidationRecordAction(recordId, {
+        transactions: financialData.transactions,
+      }, token);
+
+      // Prepare payload for Financial Record
+      const payload = {
+        current_closing_balance_gbp: financialData.balance != null ? String(financialData.balance) : null,
+        total_incoming_gbp_credits: financialData.incoming != null ? String(financialData.incoming) : null,
+        total_outgoing_gbp_debits: financialData.outgoing != null ? String(financialData.outgoing) : null,
+        payments_reflected_in_bank: financialData.paymentsReflected === "yes" ? true : financialData.paymentsReflected === "no" ? false : null,
+        is_future_engagement: financialData.futureEngagement === "yes" ? true : financialData.futureEngagement === "no" ? false : null,
+        HRValidationRecord_id: recordId,
+      };
+
+      // Create or update Financial Record
+      if (financialRecordId) {
+        await updateFinancialRecordAction(financialRecordId, payload, token);
+      } else {
+        const res = await createFinancialRecordAction(payload, token);
+        if (res.success && res.data) {
+          setFinancialRecordId(res.data.id);
+        }
+      }
+    }
+
     router.push(`/employer/sections/summary?recordId=${recordId}`);
   };
 

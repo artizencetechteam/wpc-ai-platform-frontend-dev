@@ -5,28 +5,23 @@ import { useRouter, useSearchParams } from "next/navigation";
 import axios from "axios";
 import toast from "react-hot-toast";
 import HRValidationTabs from "../_components/HRValidationTabs";
-import { listHRValidationRecordsAction, listEmployeesAction } from "@/app/employer/sections/action/action";
+import { listHRValidationRecordsAction, listEmployeesAction, updateHRValidationRecordAction, updateEmployeeAction } from "@/app/employer/sections/action/action";
+import { getClientToken } from "@/app/employer/sections/company/page";
 
-function getClientToken(): string {
-  if (typeof document === "undefined") return "";
-  const match = document.cookie
-    .split("; ")
-    .find((row) => row.startsWith("access-token="));
-  if (!match) return "";
-  const raw = decodeURIComponent(match.split("=").slice(1).join("="));
-  return raw.replace(/\s+/g, "").replace(/^(Bearer|Token)\s*/i, "");
-}
 
 // --- Types ---
 type TabId = "company" | "staff" | "rtw" | "pension" | "auth" | "contracts" | "financial" | "summary";
 
 type Employee = {
   id: string;
-  name: string;
+  employee_full_name: string;
   nationality: string;
   documentType?: string;
   documentNumber?: string;
   startDate?: string;
+  visaExpiry?: string;
+  rtwDocumentType?: string;
+  passportNumber?: string;
 };
 
 // --- Icons ---
@@ -101,7 +96,14 @@ function NoMigrantScreen({ onContinue }: { onContinue: () => void }) {
 }
 
 // --- RTWVerificationScreen ---
-function RTWVerificationScreen({ migrants, onBackToStaffList, onContinue }: { migrants: Employee[], onBackToStaffList: () => void, onContinue: () => void }) {
+interface RTWVerificationScreenProps {
+  migrants: Employee[];
+  onBackToStaffList: () => void;
+  onContinue: () => void;
+  onSaveEmployee: (empId: string, data: any) => Promise<void>;
+}
+
+function RTWVerificationScreen({ migrants, onBackToStaffList, onContinue, onSaveEmployee }: RTWVerificationScreenProps) {
   const [currentIndex, setCurrentIndex] = useState(0);
   const employee = migrants[currentIndex];
   const hasDocument = !!(employee?.documentType || employee?.documentNumber);
@@ -166,7 +168,7 @@ function RTWVerificationScreen({ migrants, onBackToStaffList, onContinue }: { mi
           backgroundColor: "white", color: "#475569",
           fontSize: "13px", fontWeight: "400", cursor: "default",
         }}>Employee {currentIndex + 1} of {migrants.length}</button>
-        <span style={{ fontSize: "13.5px", color: "#475569", fontWeight: "500" }}>{employee?.name}</span>
+        <span style={{ fontSize: "13.5px", color: "#475569", fontWeight: "500" }}>{employee?.employee_full_name}</span>
       </div>
 
       <div style={{
@@ -177,9 +179,9 @@ function RTWVerificationScreen({ migrants, onBackToStaffList, onContinue }: { mi
           width: "44px", height: "44px", borderRadius: "50%",
           backgroundColor: "#EFF6FF", display: "flex", alignItems: "center", justifyContent: "center",
           fontSize: "18px", fontWeight: "700", color: "#0852C9", flexShrink: 0,
-        }}>{getInitial(employee?.name)}</div>
+        }}>{getInitial(employee?.employee_full_name)}</div>
         <div style={{ flex: 1 }}>
-          <div style={{ fontSize: "17px", fontWeight: "700", color: "#0F172A" }}>{employee?.name}</div>
+          <div style={{ fontSize: "17px", fontWeight: "700", color: "#0F172A" }}>{employee?.employee_full_name}</div>
           <div style={{ fontSize: "13px", color: "#64748B", marginTop: "4px" }}>
             Migrant Worker{formattedStart ? ` • Employment Start: ${formattedStart}` : ""}
           </div>
@@ -257,27 +259,27 @@ function RTWVerificationScreen({ migrants, onBackToStaffList, onContinue }: { mi
                   </div>
                 ) : (
                   <div style={{ fontSize: "14px", fontWeight: "600", color: "#0F172A" }}>
-                    {extractedData?.employee_name || employee.name}
+                    {extractedData?.employee_name || employee.employee_full_name}
                   </div>
                 )}
               </div>
 
-              {/* Company Name */}
-              {(extractedData?.company_name || hasDocument) && (
+              {/* Document Type */}
+              {(extractedData?.rtw_document_type || employee.rtwDocumentType || employee.documentType || hasDocument) && (
                 <div>
-                  <div style={{ fontSize: "11px", color: "#6B7280", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: "4px" }}>Company Name</div>
+                  <div style={{ fontSize: "11px", color: "#6B7280", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: "4px" }}>Document Type</div>
                   <div style={{ fontSize: "14px", fontWeight: "600", color: "#0F172A" }}>
-                    {extractedData?.company_name || employee.documentType || "N/A"}
+                    {extractedData?.rtw_document_type || employee.rtwDocumentType || employee.documentType || "Uploaded Document"}
                   </div>
                 </div>
               )}
 
               {/* Visa Expiry */}
-              {(extractedData?.visa_expiry_date || hasDocument) && (
+              {(extractedData?.visa_expiry_date || employee.visaExpiry || hasDocument) && (
                 <div>
                   <div style={{ fontSize: "11px", color: "#6B7280", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: "4px" }}>Visa Expiry Date</div>
                   <div style={{ fontSize: "14px", fontWeight: "600", color: "#0F172A" }}>
-                    {extractedData?.visa_expiry_date ? formatDate(extractedData.visa_expiry_date) : "N/A"}
+                    {extractedData?.visa_expiry_date ? formatDate(extractedData.visa_expiry_date) : (employee.visaExpiry || "N/A")}
                   </div>
                 </div>
               )}
@@ -322,17 +324,41 @@ function RTWVerificationScreen({ migrants, onBackToStaffList, onContinue }: { mi
             fontSize: "13.5px", fontWeight: "500", cursor: "pointer",
           }}>← Previous</button>}
           {currentIndex < migrants.length - 1 ? (
-            <button onClick={() => setCurrentIndex(currentIndex + 1)} style={{
-              padding: "10px 18px", backgroundColor: "#0852C9", color: "white",
-              border: "none", borderRadius: "8px",
-              fontSize: "13.5px", fontWeight: "600", cursor: "pointer",
-            }}>Next Employee →</button>
+            <button 
+              onClick={async () => {
+                const data = {
+                  rtw_document_type: extractedData?.rtw_document_type || employee.rtwDocumentType || employee.documentType,
+                  visa_expiry_date: extractedData?.visa_expiry_date || employee.visaExpiry,
+                  passport_number: extractedData?.reference_number || employee.documentNumber
+                };
+                await onSaveEmployee(employee.id, data);
+                setCurrentIndex(currentIndex + 1);
+                setExtractedData(null);
+                setManualName("");
+              }} 
+              style={{
+                padding: "10px 18px", backgroundColor: "#0852C9", color: "white",
+                border: "none", borderRadius: "8px",
+                fontSize: "13.5px", fontWeight: "600", cursor: "pointer",
+              }}
+            >Next Employee →</button>
           ) : (
-            <button onClick={onContinue} style={{
-              padding: "10px 18px", backgroundColor: "#0852C9", color: "white",
-              border: "none", borderRadius: "8px",
-              fontSize: "13.5px", fontWeight: "600", cursor: "pointer",
-            }}>Continue to Pension Compliance</button>
+            <button 
+              onClick={async () => {
+                const data = {
+                  rtw_document_type: extractedData?.rtw_document_type || employee.rtwDocumentType || employee.documentType,
+                  visa_expiry_date: extractedData?.visa_expiry_date || employee.visaExpiry,
+                  passport_number: extractedData?.reference_number || employee.documentNumber
+                };
+                await onSaveEmployee(employee.id, data);
+                onContinue();
+              }} 
+              style={{
+                padding: "10px 18px", backgroundColor: "#0852C9", color: "white",
+                border: "none", borderRadius: "8px",
+                fontSize: "13.5px", fontWeight: "600", cursor: "pointer",
+              }}
+            >Continue to Pension Compliance</button>
           )}
         </div>
       </div>
@@ -380,11 +406,14 @@ function RTWComplianceImpl() {
             if (empRes.success && empRes.data) {
               const mapped = empRes.data.map((e: any) => ({
                 id: String(e.id),
-                name: e.employee_full_name,
+                employee_full_name: e.employee_full_name,
                 nationality: e.nationality || "Migrant",
                 documentType: e.rtw_document_url ? "Uploaded Document" : "",
-                documentNumber: e.rtw_document_url ? e.rtw_document_url : "",
-                startDate: e.employment_start_date
+                documentNumber: e.passport_number || (e.rtw_document_url ? e.rtw_document_url : ""),
+                startDate: e.employment_start_date,
+                visaExpiry: e.visa_expiry_date,
+                rtwDocumentType: e.rtw_document_type,
+                passportNumber: e.passport_number,
               }));
               setEmployees(mapped);
               sessionStorage.setItem("hr_employees", JSON.stringify(mapped));
@@ -417,14 +446,45 @@ function RTWComplianceImpl() {
     } catch {}
   };
 
+  const handleSaveEmployee = async (empId: string, data: any) => {
+    try {
+      const token = getClientToken();
+      await updateEmployeeAction(Number(empId), data, token);
+      
+      // Update local state so it persists if we go back/forward
+      setEmployees(prev => prev.map(emp => emp.id === empId ? { ...emp, ...data } : emp));
+    } catch (err) {
+      console.error("Error saving employee RTW data:", err);
+    }
+  };
+
   const handleBack = () => router.push(`/employer/sections/hr-validation?recordId=${recordId}`);
-  const handleContinueToPension = () => { markRTWComplete(); router.push(`/employer/sections/pension?recordId=${recordId}`); };
+  const handleContinueToPension = async () => {
+    markRTWComplete();
+
+    if (recordId) {
+      const token = getClientToken();
+      await updateHRValidationRecordAction(recordId, {
+        result_complete_sections: {
+          has_migrants: hasMigrants,
+          migrant_count: migrants.length,
+        }
+      }, token);
+    }
+
+    router.push(`/employer/sections/pension?recordId=${recordId}`);
+  };
 
   return (
     <div style={{ fontFamily: "'Segoe UI', system-ui, sans-serif", backgroundColor: "#F1F5F9", minHeight: "100vh" }}>
       <HRValidationTabs currentTabId="rtw" hrRecordId={recordId} onBack={handleBack} />
       {loaded && (hasMigrants
-        ? <RTWVerificationScreen migrants={migrants} onBackToStaffList={handleBack} onContinue={handleContinueToPension} />
+        ? <RTWVerificationScreen 
+            migrants={migrants} 
+            onBackToStaffList={handleBack} 
+            onContinue={handleContinueToPension} 
+            onSaveEmployee={handleSaveEmployee}
+          />
         : <NoMigrantScreen onContinue={handleContinueToPension} />
       )}
     </div>

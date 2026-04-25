@@ -7,10 +7,11 @@ import { toast } from "react-hot-toast";
 import {
   createHRValidationRecordAction,
   listHRValidationRecordsAction,
+  updateHRValidationRecordAction,
 } from "@/app/employer/sections/action/action";
 import HRValidationTabs from "../_components/HRValidationTabs";
 
-function getClientToken(): string {
+export function getClientToken(): string {
   if (typeof document === "undefined") return "";
   const match = document.cookie
     .split("; ")
@@ -353,7 +354,7 @@ function CompanyPageImpl() {
     } catch { }
   }, [manualOpening, manualClosing, loading]);
 
-  const handleContinue = () => {
+  const handleContinue = async () => {
     if (!companyName.trim() || !bankName) return;
     if (hrRecordId) {
       sessionStorage.setItem(`company_name_${hrRecordId}`, companyName.trim());
@@ -368,6 +369,14 @@ function CompanyPageImpl() {
         prev.transactions = transactions;
         sessionStorage.setItem("hr_financial_data", JSON.stringify(prev));
       } catch { }
+
+      // Save to server
+      const token = getClientToken();
+      await updateHRValidationRecordAction(hrRecordId, {
+        company_name: companyName.trim(),
+        bank_name: bankName,
+        transactions: transactions,
+      }, token);
 
       // Mark company step as complete in progress map
       const p = { ...tabProgress, company: true };
