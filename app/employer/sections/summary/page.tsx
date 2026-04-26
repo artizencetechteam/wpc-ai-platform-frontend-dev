@@ -3,6 +3,8 @@
 import { useState, useEffect, Suspense, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import HRValidationTabs from "../_components/HRValidationTabs";
+import { listHRValidationRecordsAction, updateHRValidationRecordAction, listEmployeesAction, listFinancialRecordsAction } from "@/app/employer/sections/action/action";
+import { getClientToken } from "@/app/employer/sections/company/page";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -25,9 +27,11 @@ interface Progress {
 
 interface Employee {
   id: string | number;
-  name: string;
+  employee_full_name: string;
   nationality: string;
   documentType?: string;
+  pension_status?: string | null;
+  [key: string]: any;
 }
 
 interface Workflow {
@@ -177,6 +181,66 @@ function SummaryPageImpl(): React.JSX.Element {
         const pen = sessionStorage.getItem(`pension_data_${id}`);
         if (pen) setPensionData(JSON.parse(pen));
       }
+
+      // Fetch from server to fully hydrate state
+      const fetchRecord = async () => {
+        try {
+          const token = getClientToken();
+          const res = await listHRValidationRecordsAction(token);
+          if (res.success && res.data) {
+            const record = res.data.find((r: any) => r.id === Number(id));
+            if (record) {
+              // 1. Comments
+              const serverComments: Record<string, string> = {};
+              if (record.rtw_section_comments) serverComments["Workflow: RTW & Start Date Compliance"] = record.rtw_section_comments;
+              if (record.pension_section_comments) serverComments["Workflow: Pension Compliance"] = record.pension_section_comments;
+              if (record.authorising_officer_section_comments) serverComments["Workflow: Authorising Officer"] = record.authorising_officer_section_comments;
+              if (record.contract_section_comments) serverComments["Workflow: Client Contracts"] = record.contract_section_comments;
+              if (record.financial_section_comments) serverComments["Workflow: Financial Viability"] = record.financial_section_comments;
+              if (record.employeee_sections_comments) serverComments["General"] = record.employeee_sections_comments;
+              setComments(serverComments);
+
+              // 2. Company Name
+              if (record.company_name) setCompanyName(record.company_name);
+
+              // 3. Contracts & Pension (from result_complete_sections)
+              const saved = record.result_complete_sections || {};
+              if (saved.contracts) setContracts(saved.contracts);
+              if (saved.pension) setPensionData(saved.pension);
+
+              // 4. Financial Data
+              const finRes = await listFinancialRecordsAction(token);
+              if (finRes.success && finRes.data) {
+                const finRecord = finRes.data.find((fr) => fr.HRValidationRecord_id === Number(id));
+                if (finRecord) {
+                  setFinancialData((prev) => ({
+                    ...prev,
+                    balance: finRecord.current_closing_balance_gbp ? parseFloat(finRecord.current_closing_balance_gbp) : prev.balance,
+                    incoming: finRecord.total_incoming_gbp_credits ? parseFloat(finRecord.total_incoming_gbp_credits) : prev.incoming,
+                    outgoing: finRecord.total_outgoing_gbp_debits ? parseFloat(finRecord.total_outgoing_gbp_debits) : prev.outgoing,
+                    paymentsReflected: finRecord.payments_reflected_in_bank === true ? "yes" : finRecord.payments_reflected_in_bank === false ? "no" : prev.paymentsReflected,
+                    futureEngagement: finRecord.is_future_engagement === true ? "yes" : finRecord.is_future_engagement === false ? "no" : prev.futureEngagement,
+                  }));
+                }
+              }
+              if (record.transactions) {
+                setFinancialData((prev) => ({
+                  ...prev,
+                  transactions: typeof record.transactions === "string" ? JSON.parse(record.transactions) : record.transactions,
+                }));
+              }
+            }
+          }
+
+          const empRes = await listEmployeesAction(Number(id), token);
+          if (empRes.success && empRes.data) {
+            setEmployees(empRes.data);
+          }
+        } catch (err) {
+          console.error("Error fetching summary record:", err);
+        }
+      };
+      if (id) fetchRecord();
     } catch {}
   }, [searchParams]);
 
@@ -221,7 +285,12 @@ function SummaryPageImpl(): React.JSX.Element {
     !hasFlaggedTransactions &&
     (financialData.paymentsReflected === "yes" || (financialData.paymentsReflected === "no" && financialData.futureEngagement === "yes"));
 
-  const pensionCompliant = !!progress.pension && pensionData.companyRegistered !== "no";
+  const hasNonCompliantPension = employees.some(e => {
+    const eligible = e.min_22_year_age && e.earning_gbp_10k_above;
+    const isCompliant = !!e.auto_enrollment_date || !!e.opted_out;
+    return eligible && !isCompliant;
+  });
+  const pensionCompliant = !!progress.pension && pensionData.companyRegistered !== "no" && !hasNonCompliantPension;
   const contractsCompliant = !!progress.contracts && (contractsTotal === 0 || contractsPassed === contractsTotal);
 
   const workflows: Workflow[] = [
@@ -521,9 +590,31 @@ function SummaryPageImpl(): React.JSX.Element {
                 Cancel
               </button>
               <button
-                onClick={() => {
-                  setComments(prev => ({ ...prev, [activeCommentSection]: commentText }));
+                onClick={async () => {
+                  const newComments = { ...comments, [activeCommentSection]: commentText };
+                  setComments(newComments);
                   setActiveCommentSection(null);
+
+                  // Map to server fields
+                  const mapping: Record<string, string> = {
+                    "Workflow: RTW & Start Date Compliance": "rtw_section_comments",
+                    "Workflow: Pension Compliance": "pension_section_comments",
+                    "Workflow: Authorising Officer": "authorising_officer_section_comments",
+                    "Workflow: Client Contracts": "contract_section_comments",
+                    "Workflow: Financial Viability": "financial_section_comments",
+                    "General": "employeee_sections_comments",
+                  };
+
+                  const updateData: any = {};
+                  Object.entries(newComments).forEach(([section, text]) => {
+                    const field = mapping[section];
+                    if (field) updateData[field] = text;
+                  });
+
+                  if (recordId) {
+                    const token = getClientToken();
+                    await updateHRValidationRecordAction(Number(recordId), updateData, token);
+                  }
                 }}
                 style={{
                   padding: "10px 16px", backgroundColor: "#0852C9", color: "white",

@@ -12,6 +12,7 @@ import {
   type Employee,
 } from "@/app/employer/sections/action/action";
 import HRValidationTabs from "../_components/HRValidationTabs";
+import { getClientToken } from "../company/page";
 
 
 
@@ -31,15 +32,6 @@ type RTWForm = {
 
 
 
-function getClientToken(): string {
-  if (typeof document === "undefined") return "";
-  const match = document.cookie
-    .split("; ")
-    .find((row) => row.startsWith("access-token="));
-  if (!match) return "";
-  const raw = decodeURIComponent(match.split("=").slice(1).join("="));
-  return raw.replace(/\s+/g, "").replace(/^(Bearer|Token)\s*/i, "");
-}
 
 
 

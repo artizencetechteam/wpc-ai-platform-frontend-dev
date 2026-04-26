@@ -7,10 +7,11 @@ import { toast } from "react-hot-toast";
 import {
   createHRValidationRecordAction,
   listHRValidationRecordsAction,
+  updateHRValidationRecordAction,
 } from "@/app/employer/sections/action/action";
 import HRValidationTabs from "../_components/HRValidationTabs";
 
-function getClientToken(): string {
+export function getClientToken(): string {
   if (typeof document === "undefined") return "";
   const match = document.cookie
     .split("; ")
@@ -315,12 +316,30 @@ function CompanyPageImpl() {
       setHrRecordId(recordId);
       if (recordId !== null) {
         sessionStorage.setItem("current_hr_record_id", String(recordId));
-        // Retrieve company and bank name from storage if it exists for this record
+
+        // Hydrate from server if available
+        let srvName = "";
+        let srvBank = "";
+        const record = sortedRecords.find((r) => r.id === recordId);
+        if (record) {
+          if (record.company_name) {
+            srvName = record.company_name;
+            setCompanyName(srvName);
+            sessionStorage.setItem(`company_name_${recordId}`, srvName);
+          }
+          if (record.bank_name) {
+            srvBank = record.bank_name;
+            setBankName(srvBank);
+            sessionStorage.setItem(`bank_name_${recordId}`, srvBank);
+          }
+        }
+
+        // Fallback: Retrieve from storage if server didn't have it
         const savedName = sessionStorage.getItem(`company_name_${recordId}`);
-        if (savedName) setCompanyName(savedName);
+        if (savedName && !srvName) setCompanyName(savedName);
 
         const savedBank = sessionStorage.getItem(`bank_name_${recordId}`);
-        if (savedBank) setBankName(savedBank);
+        if (savedBank && !srvBank) setBankName(savedBank);
 
         // Restore manual balances and transactions from shared financial data
         const finDataStr = sessionStorage.getItem("hr_financial_data");
@@ -353,7 +372,7 @@ function CompanyPageImpl() {
     } catch { }
   }, [manualOpening, manualClosing, loading]);
 
-  const handleContinue = () => {
+  const handleContinue = async () => {
     if (!companyName.trim() || !bankName) return;
     if (hrRecordId) {
       sessionStorage.setItem(`company_name_${hrRecordId}`, companyName.trim());
@@ -368,6 +387,14 @@ function CompanyPageImpl() {
         prev.transactions = transactions;
         sessionStorage.setItem("hr_financial_data", JSON.stringify(prev));
       } catch { }
+
+      // Save to server
+      const token = getClientToken();
+      await updateHRValidationRecordAction(hrRecordId, {
+        company_name: companyName.trim(),
+        bank_name: bankName,
+        transactions: transactions,
+      }, token);
 
       // Mark company step as complete in progress map
       const p = { ...tabProgress, company: true };
@@ -506,7 +533,7 @@ function CompanyPageImpl() {
 
             <div style={{ marginBottom: transactions.length > 0 ? "12px" : "24px" }}>
               <label style={{ display: "block", fontSize: "14px", fontWeight: "600", color: "#374151", marginBottom: "8px" }}>
-                Upload Bank Statement (Optional)
+                Upload Bank Statement
               </label>
               <input
                 type="file"

@@ -1,6 +1,7 @@
 'use server';
 
 import { cookies } from 'next/headers';
+import { refreshTokenAction } from '@/app/auth/_action/auth.action';
 
 const BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://37.27.113.235:6767';
 
@@ -53,12 +54,33 @@ async function apiFetch(
   clientToken?: string,
 ): Promise<Response> {
   const { accessToken, sessionToken } = await resolveToken(clientToken);
-  const res = await fetch(url, {
+  let res = await fetch(url, {
     ...options,
     headers: makeHeaders(accessToken, sessionToken),
     cache: 'no-store',
   });
+
   console.log(`[apiFetch] ${options.method ?? 'GET'} ${url} → ${res.status}`);
+
+  // Auto-refresh logic for Server Actions
+  if (res.status === 401) {
+    console.log('[apiFetch] 401 Detected. Attempting token refresh...');
+    const refreshResult = await refreshTokenAction();
+    
+    if (refreshResult.success && refreshResult.accessToken) {
+      console.log('[apiFetch] Refresh successful. Retrying original request...');
+      // Retry with new token
+      res = await fetch(url, {
+        ...options,
+        headers: makeHeaders(refreshResult.accessToken, sessionToken),
+        cache: 'no-store',
+      });
+      console.log(`[apiFetch] Retry result → ${res.status}`);
+    } else {
+      console.warn('[apiFetch] Refresh failed or no new token. Returning original 401.');
+    }
+  }
+
   return res;
 }
 
@@ -76,9 +98,21 @@ function errMsg(data: any): string {
 
 export type HRValidationRecord = {
   id: number;
+  date_created?: string;
+  date_updated?: string;
+  company_name?: string | null;
+  bank_statement_url?: string | null;
+  bank_name?: string | null;
+  transactions?: any | null;
+  complete_summary_section?: boolean | null;
+  result_complete_sections?: any | null;
+  rtw_section_comments?: string | null;
+  pension_section_comments?: string | null;
+  authorising_officer_section_comments?: string | null;
+  contract_section_comments?: string | null;
+  financial_section_comments?: string | null;
+  employeee_sections_comments?: string | null;
   User: number;
-  created_at?: string;
-  status?: string;
   [key: string]: any;
 };
 
@@ -91,6 +125,35 @@ export type Employee = {
   rtw_document_url?: string;
   status?: string;
   created_at?: string;
+  // Pension fields
+  min_22_year_age?: boolean;
+  earning_gbp_10k_above?: boolean;
+  pension_status?: string;
+  opted_out?: boolean;
+  auto_enrollment_date?: string | null;
+  // AO fields
+  role_in_company?: string | null;
+  AO_Credentials_senior_most_employee?: boolean;
+  AO_Credentials_company_director?: boolean;
+  AO_Credentials_on_payroll?: boolean;
+  AO_Credentials_holds_shared?: boolean;
+  // RTW fields
+  rtw_document_type?: string | null;
+  visa_expiry_date?: string | null;
+  passport_number?: string | null;
+  check_date?: string | null;
+  company_name?: string | null;
+  [key: string]: any;
+};
+
+export type FinancialRecord = {
+  id: number;
+  current_closing_balance_gbp?: string | null;
+  total_incoming_gbp_credits?: string | null;
+  total_outgoing_gbp_debits?: string | null;
+  payments_reflected_in_bank?: boolean | null;
+  is_future_engagement?: boolean | null;
+  HRValidationRecord_id?: number | null;
   [key: string]: any;
 };
 
@@ -246,6 +309,26 @@ export async function createHRValidationRecordAction(
   }
 }
 
+export async function updateHRValidationRecordAction(
+  id: number,
+  payload: Partial<HRValidationRecord>,
+  clientToken?: string,
+): Promise<AR<HRValidationRecord>> {
+  try {
+    const res = await apiFetch(
+      `${BASE_URL}/api/hr-validation/hr-validation-records/${id}/`,
+      { method: 'PATCH', body: JSON.stringify(payload) },
+      clientToken,
+    );
+    const data = await res.json();
+    if (!res.ok) return { success: false, message: errMsg(data) };
+    return { success: true, message: 'Updated.', data };
+  } catch (e) {
+    console.error('[updateHRValidationRecordAction]', e);
+    return { success: false, message: 'Network error.' };
+  }
+}
+
 // ─── Employees ────────────────────────────────────────────────────────────────
 
 export async function listEmployeesAction(
@@ -288,6 +371,81 @@ export async function addEmployeeAction(
     return { success: true, message: 'Employee added.', data };
   } catch (e) {
     console.error('[addEmployeeAction]', e);
+    return { success: false, message: 'Network error.' };
+  }
+}
+
+export async function updateEmployeeAction(
+  id: number,
+  payload: Partial<Employee>,
+  clientToken?: string,
+): Promise<AR<Employee>> {
+  try {
+    const res = await apiFetch(
+      `${BASE_URL}/api/hr-validation/employees/${id}/`,
+      { method: 'PATCH', body: JSON.stringify(payload) },
+      clientToken,
+    );
+    const data = await res.json();
+    if (!res.ok) return { success: false, message: errMsg(data) };
+    return { success: true, message: 'Employee updated.', data };
+  } catch (e) {
+    console.error('[updateEmployeeAction]', e);
+    return { success: false, message: 'Network error.' };
+  }
+}
+
+// ─── Financial Records ─────────────────────────────────────────────────────────
+
+export async function listFinancialRecordsAction(
+  clientToken?: string,
+): Promise<AR<FinancialRecord[]>> {
+  try {
+    const res = await apiFetch(`${BASE_URL}/api/hr-validation/financial-records/`, {}, clientToken);
+    const data = await res.json();
+    if (!res.ok) return { success: false, message: errMsg(data) };
+    return { success: true, message: 'Financial records loaded.', data };
+  } catch (e) {
+    console.error('[listFinancialRecordsAction]', e);
+    return { success: false, message: 'Network error.' };
+  }
+}
+
+export async function createFinancialRecordAction(
+  payload: Partial<FinancialRecord>,
+  clientToken?: string,
+): Promise<AR<FinancialRecord>> {
+  try {
+    const res = await apiFetch(
+      `${BASE_URL}/api/hr-validation/financial-records/`,
+      { method: 'POST', body: JSON.stringify(payload) },
+      clientToken,
+    );
+    const data = await res.json();
+    if (!res.ok) return { success: false, message: errMsg(data) };
+    return { success: true, message: 'Financial record created.', data };
+  } catch (e) {
+    console.error('[createFinancialRecordAction]', e);
+    return { success: false, message: 'Network error.' };
+  }
+}
+
+export async function updateFinancialRecordAction(
+  id: number,
+  payload: Partial<FinancialRecord>,
+  clientToken?: string,
+): Promise<AR<FinancialRecord>> {
+  try {
+    const res = await apiFetch(
+      `${BASE_URL}/api/hr-validation/financial-records/${id}/`,
+      { method: 'PATCH', body: JSON.stringify(payload) },
+      clientToken,
+    );
+    const data = await res.json();
+    if (!res.ok) return { success: false, message: errMsg(data) };
+    return { success: true, message: 'Financial record updated.', data };
+  } catch (e) {
+    console.error('[updateFinancialRecordAction]', e);
     return { success: false, message: 'Network error.' };
   }
 }

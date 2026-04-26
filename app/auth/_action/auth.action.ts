@@ -406,3 +406,61 @@ export async function forgotPasswordAction(payload: {
     };
   }
 }
+
+/**
+ * Server action to refresh the access token using the refresh token stored in cookies.
+ */
+export async function refreshTokenAction(): Promise<{ success: boolean; accessToken?: string }> {
+  try {
+    const cookieStore = await cookies();
+    const refreshToken = cookieStore.get("refresh-token")?.value;
+
+    if (!refreshToken) {
+      console.warn(" [refreshTokenAction] No refresh token found in cookies.");
+      return { success: false };
+    }
+
+    // Try multiple plausible endpoints if the first one fails
+    const endpoints = [
+      `${API_URL}api/auth/refresh/`,
+      `${API_URL}accounts/token/refresh/`,
+      `${API_URL}api/token/refresh/`,
+    ];
+
+    let lastError = null;
+    for (const endpoint of endpoints) {
+      try {
+        console.log(` [refreshTokenAction] Attempting refresh at: ${endpoint}`);
+        const { data } = await axios.post(
+          endpoint,
+          { refresh: refreshToken },
+          { timeout: 10000 }
+        );
+
+        const newAccess = extractAccessToken(data);
+        if (newAccess) {
+          console.log(" [refreshTokenAction] Success! Updating access-token cookie.");
+          
+          cookieStore.set("access-token", newAccess.replace(/\s+/g, ''), {
+            httpOnly: false,
+            secure: process.env.NODE_ENV === "production",
+            sameSite: "lax",
+            path: "/",
+            maxAge: 60 * 60 * 24 * 7,
+          });
+
+          return { success: true, accessToken: newAccess };
+        }
+      } catch (err: any) {
+        lastError = err;
+        console.warn(` [refreshTokenAction] Failed at ${endpoint}:`, err.response?.status || err.message);
+      }
+    }
+
+    console.error(" [refreshTokenAction] All refresh attempts failed.");
+    return { success: false };
+  } catch (error) {
+    console.error(" [refreshTokenAction] Unexpected error:", error);
+    return { success: false };
+  }
+}

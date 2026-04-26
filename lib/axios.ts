@@ -102,11 +102,15 @@ clientApi.interceptors.request.use(
             { refresh: refreshToken }
           );
 
-          const newAccessToken = refreshResponse.data.access;
+          const resData = refreshResponse.data;
+          const newAccessToken = resData.access ?? resData.token ?? resData.access_token ?? resData.key;
 
-          setCookie("access-token", newAccessToken);
-
-          accessToken = newAccessToken;
+          if (newAccessToken) {
+            setCookie("access-token", newAccessToken.replace(/\s+/g, ''));
+            accessToken = newAccessToken;
+          } else {
+            throw new Error("New access token not found in refresh response");
+          }
 
         } catch (error) {
 
@@ -167,14 +171,17 @@ clientApi.interceptors.response.use(
           { refresh: refreshToken }
         );
 
-        const newAccessToken = refreshResponse.data.access;
+        const resData = refreshResponse.data;
+        const newAccessToken = resData.access ?? resData.token ?? resData.access_token ?? resData.key;
 
-        setCookie("access-token", newAccessToken);
-
-        originalRequest.headers.Authorization =
-          `Bearer ${newAccessToken}`;
-
-        return clientApi(originalRequest);
+        if (newAccessToken) {
+          const cleanToken = newAccessToken.replace(/\s+/g, '');
+          setCookie("access-token", cleanToken);
+          originalRequest.headers.Authorization = `Bearer ${cleanToken}`;
+          return clientApi(originalRequest);
+        } else {
+          throw new Error("New access token not found in refresh response");
+        }
 
       } catch (refreshError) {
 

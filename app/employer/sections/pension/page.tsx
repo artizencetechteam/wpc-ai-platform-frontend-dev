@@ -3,6 +3,8 @@
 import { useState, useEffect, useRef, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import HRValidationTabs from "../_components/HRValidationTabs";
+import { updateHRValidationRecordAction, updateEmployeeAction, listEmployeesAction, listHRValidationRecordsAction } from "@/app/employer/sections/action/action";
+import { getClientToken } from "@/app/employer/sections/company/page";
 
 
 
@@ -245,7 +247,8 @@ function CompanyRegistrationStep({
 
 type Employee = {
   id: number;
-  name: string;
+  employee_full_name: string;
+  [key: string]: any;
 };
 
 type EmployeeEligibilityStepProps = {
@@ -313,7 +316,7 @@ function EmployeeEligibilityStep({
               padding: "14px 16px", borderBottom: "1px solid #F1F5F9",
               alignItems: "center",
             }}>
-              <div style={{ fontSize: "14px", fontWeight: "500", color: "#0F172A" }}>{emp.name}</div>
+              <div style={{ fontSize: "14px", fontWeight: "500", color: "#0F172A" }}>{emp.employee_full_name}</div>
               {["age22", "earnings10k", "autoEnrolled", "optedOut"].map((field) => (
                 <div key={field}>
                   <input
@@ -413,7 +416,61 @@ function PensionComplianceImpl() {
       const savedEmps = sessionStorage.getItem("hr_employees");
       if (savedEmps) setEmployees(JSON.parse(savedEmps));
     } catch {}
+
+    if (resolvedId) {
+      loadEmployees(resolvedId);
+
+      // Hydrate pension state from server
+      (async () => {
+        try {
+          const token = getClientToken();
+          const res = await listHRValidationRecordsAction(token);
+          if (res.success && res.data) {
+            const record = res.data.find((r) => r.id === resolvedId);
+            if (record && record.result_complete_sections) {
+              const saved = record.result_complete_sections;
+              if (saved.pension && saved.pension.companyRegistered) {
+                setCompanyRegistered(saved.pension.companyRegistered);
+              }
+            }
+          }
+        } catch (err) {
+          console.error("Error hydrating pension state:", err);
+        }
+      })();
+    }
   }, [searchParams]);
+
+  async function loadEmployees(recordId: number) {
+    try {
+      const token = getClientToken();
+      const res = await listEmployeesAction(recordId, token);
+      if (res.success && res.data) {
+        setEmployees(res.data);
+
+        // Pre-populate checks from backend
+        setEligibilityChecks((prev) => {
+          const newChecks = { ...prev };
+          (res.data || []).forEach((emp: any) => {
+            // Priority: If backend has non-null/non-default data, use it
+            // We check for opted_out or pension_status to see if it was ever touched
+            const hasData = emp.opted_out !== null || emp.pension_status !== null;
+            if (hasData || !newChecks[emp.id]) {
+              newChecks[emp.id] = {
+                age22: emp.min_22_year_age || false,
+                earnings10k: emp.earning_gbp_10k_above || false,
+                optedOut: emp.opted_out || false,
+                autoEnrolled: emp.pension_status === "enrolled" || emp.pension_status === "auto_enrolled" || !!emp.auto_enrollment_date,
+              };
+            }
+          });
+          return newChecks;
+        });
+      }
+    } catch (err) {
+      console.error("Error loading employees in Pension:", err);
+    }
+  }
 
   // Persist companyRegistered whenever it changes
   useEffect(() => {
@@ -448,10 +505,60 @@ function PensionComplianceImpl() {
     }
   };
 
-  const handleComplete = () => {
+  const handleComplete = async () => {
     markComplete("pension");
+
+    if (recordId) {
+      const token = getClientToken();
+
+      // 1. Save general record data
+      await updateHRValidationRecordAction(recordId, {
+        pension_section_comments: companyRegistered === "no" ? "Company is not registered with a pension scheme." : null,
+        result_complete_sections: {
+          ...(await getSavedResults(recordId)),
+          pension: {
+            companyRegistered,
+            eligibilityChecks,
+          }
+        }
+      }, token);
+
+      // 2. Save per-employee pension data
+      for (const emp of employees) {
+        const c = eligibilityChecks[emp.id] || {};
+        
+        await updateEmployeeAction(emp.id, {
+          min_22_year_age: !!c.age22,
+          earning_gbp_10k_above: !!c.earnings10k,
+          opted_out: !!c.optedOut,
+          pension_status: c.autoEnrolled ? "enrolled" : "not_enrolled",
+          auto_enrollment_date: c.autoEnrolled ? new Date().toISOString().split('T')[0] : null,
+        }, token);
+      }
+    }
+
     router.push(`/employer/sections/authorising-officer?recordId=${recordId}`);
   };
+
+  const getStatusLabel = (c: any) => {
+    const eligible = c.age22 && c.earnings10k;
+    if (!eligible) return "Not Eligible";
+    if (c.autoEnrolled) return "Compliant";
+    if (c.optedOut) return "Opted Out";
+    return "Non-Compliant";
+  };
+
+  async function getSavedResults(id: number) {
+     try {
+       const token = getClientToken();
+       const res = await listHRValidationRecordsAction(token);
+       if (res.success && res.data) {
+         const record = res.data.find(r => r.id === id);
+         return record?.result_complete_sections || {};
+       }
+       return {};
+     } catch { return {}; }
+  }
 
   const handleBack = () => router.back();
 
