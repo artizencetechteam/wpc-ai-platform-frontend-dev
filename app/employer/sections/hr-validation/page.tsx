@@ -287,6 +287,7 @@ function HRRecordsValidationImpl() {
 
   const [showModal, setShowModal] = useState(false);
   const [modalStep, setModalStep] = useState<"choose" | "manual" | "rtw">("choose");
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState("");
   const [isExtracting, setIsExtracting] = useState(false);
@@ -478,9 +479,10 @@ function HRRecordsValidationImpl() {
   };
 
   const markStaffComplete = () => {
+    if (!hrRecordId) return;
     try {
-      const p = JSON.parse(sessionStorage.getItem("hr_progress") || "{}");
-      sessionStorage.setItem("hr_progress", JSON.stringify({ ...p, staff: true }));
+      const p = JSON.parse(sessionStorage.getItem(`hr_progress_${hrRecordId}`) || "{}");
+      sessionStorage.setItem(`hr_progress_${hrRecordId}`, JSON.stringify({ ...p, staff: true }));
     } catch {}
   };
 
@@ -590,9 +592,29 @@ function HRRecordsValidationImpl() {
 
         {employees.length > 0 && (
           <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "20px" }}>
-            <button onClick={() => { markStaffComplete(); router.push(`/employer/sections/rtw-compliance?recordId=${hrRecordId}`); }}
-              style={{ backgroundColor: "#0852C9", color: "white", border: "none", borderRadius: "8px", padding: "12px 26px", fontSize: "14px", fontWeight: "600", cursor: "pointer" }}>
-              Proceed to Validation Workflows →
+            <button 
+              onClick={() => { 
+                setIsSubmitting(true);
+                markStaffComplete(); 
+                router.push(`/employer/sections/rtw-compliance?recordId=${hrRecordId}`); 
+              }}
+              disabled={isSubmitting}
+              style={{ 
+                backgroundColor: isSubmitting ? "#93ABDE" : "#0852C9", 
+                color: "white", 
+                border: "none", 
+                borderRadius: "8px", 
+                padding: "12px 26px", 
+                fontSize: "14px", 
+                fontWeight: "600", 
+                cursor: isSubmitting ? "not-allowed" : "pointer",
+                display: "flex",
+                alignItems: "center",
+                gap: "8px"
+              }}
+            >
+              {isSubmitting && <SpinnerIcon color="#fff" />}
+              {isSubmitting ? "Moving to Workflows..." : "Proceed to Validation Workflows →"}
             </button>
           </div>
         )}

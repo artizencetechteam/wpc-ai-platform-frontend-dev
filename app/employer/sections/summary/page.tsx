@@ -120,6 +120,8 @@ function SummaryPageImpl(): React.JSX.Element {
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [progress, setProgress] = useState<Progress>({});
   const [recordId, setRecordId] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Dynamic data from other sections
   const [companyName, setCompanyName] = useState<string>("");
@@ -154,13 +156,15 @@ function SummaryPageImpl(): React.JSX.Element {
     setRecordId(id);
 
     try {
-      // Employees
-      const e = sessionStorage.getItem("hr_employees");
-      if (e) setEmployees(JSON.parse(e) as Employee[]);
+      if (id) {
+        // Employees
+        const e = sessionStorage.getItem(`hr_employees_${id}`);
+        if (e) setEmployees(JSON.parse(e) as Employee[]);
 
-      // Progress flags
-      const p = sessionStorage.getItem("hr_progress");
-      if (p) setProgress(JSON.parse(p) as Progress);
+        // Progress flags
+        const p = sessionStorage.getItem(`hr_progress_${id}`);
+        if (p) setProgress(JSON.parse(p) as Progress);
+      }
 
       // Company name
       if (id) {
@@ -168,13 +172,15 @@ function SummaryPageImpl(): React.JSX.Element {
         if (savedName) setCompanyName(savedName);
       }
 
-      // Financial data
-      const f = sessionStorage.getItem("hr_financial_data");
-      if (f) setFinancialData(JSON.parse(f));
+      if (id) {
+        // Financial data
+        const f = sessionStorage.getItem(`hr_financial_data_${id}`);
+        if (f) setFinancialData(JSON.parse(f));
 
-      // Contracts
-      const c = sessionStorage.getItem("hr_contracts");
-      if (c) setContracts(JSON.parse(c));
+        // Contracts
+        const c = sessionStorage.getItem(`hr_contracts_${id}`);
+        if (c) setContracts(JSON.parse(c));
+      }
 
       // Pension data
       if (id) {
@@ -238,9 +244,15 @@ function SummaryPageImpl(): React.JSX.Element {
           }
         } catch (err) {
           console.error("Error fetching summary record:", err);
+        } finally {
+          setLoading(false);
         }
       };
-      if (id) fetchRecord();
+      if (id) {
+        fetchRecord();
+      } else {
+        setLoading(false);
+      }
     } catch {}
   }, [searchParams]);
 
@@ -339,24 +351,70 @@ function SummaryPageImpl(): React.JSX.Element {
   ];
 
   const handleStartNew = (): void => {
+    setIsSubmitting(true);
     try {
-      sessionStorage.removeItem("hr_employees");
-      sessionStorage.removeItem("hr_progress");
-      sessionStorage.removeItem("hr_financial_data");
-      sessionStorage.removeItem("hr_contracts");
+      if (recordId) {
+        sessionStorage.removeItem(`hr_employees_${recordId}`);
+        sessionStorage.removeItem(`hr_progress_${recordId}`);
+        sessionStorage.removeItem(`hr_financial_data_${recordId}`);
+        sessionStorage.removeItem(`hr_contracts_${recordId}`);
+        sessionStorage.removeItem(`company_name_${recordId}`);
+        sessionStorage.removeItem(`bank_name_${recordId}`);
+        sessionStorage.removeItem(`pension_data_${recordId}`);
+      }
+      sessionStorage.removeItem("current_hr_record_id");
     } catch {}
     router.push("/employer/sections/company");
   };
 
   return (
     <div style={{ fontFamily: "'Segoe UI', system-ui, sans-serif", backgroundColor: "#F1F5F9", minHeight: "100vh" }}>
-      <HRValidationTabs currentTabId="summary" hrRecordId={recordId} onBack={() => router.back()} />
+      <style>{`
+        @media print {
+          @page {
+            size: A4 portrait;
+            margin: 0;
+          }
+          body {
+            background-color: white !important;
+            margin: 0 !important;
+            padding: 0 !important;
+          }
+          .no-print {
+            display: none !important;
+          }
+          .print-container {
+            width: 100% !important;
+            max-width: none !important;
+            margin: 0 !important;
+            padding: 20mm !important;
+            background: white !important;
+            box-shadow: none !important;
+            border: none !important;
+          }
+          .card-print {
+            border: 1px solid #E2E8F0 !important;
+            box-shadow: none !important;
+            break-inside: avoid;
+          }
+          * {
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+          }
+        }
+      `}</style>
+      <div className="no-print">
+        <HRValidationTabs currentTabId="summary" hrRecordId={recordId} onBack={() => router.back()} />
+      </div>
 
-      <div style={{ maxWidth: "860px", margin: "30px auto", padding: "0 24px" }}>
-
-        {/* Header */}
+      <div className="print-container" style={{ maxWidth: "860px", margin: "30px auto", padding: "0 24px" }}>
+        {loading ? (
+          <div style={{ display: "flex", justifyContent: "center", padding: "100px" }}><SpinnerIcon /></div>
+        ) : (
+          <>
+            {/* Header */}
         <div style={{ display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center", marginBottom: "28px", position: "relative" }}>
-          <div style={{ position: "absolute", top: 0, right: 0 }}>
+          <div className="no-print" style={{ position: "absolute", top: 0, right: 0 }}>
             <button 
               onClick={() => { setActiveCommentSection("General"); setCommentText(comments["General"] || ""); }}
               style={{ display: "flex", alignItems: "center", gap: "6px", backgroundColor: "white", color: "#0852C9", border: "1.5px solid #0852C9", padding: "8px 16px", borderRadius: "8px", cursor: "pointer", fontWeight: "600", fontSize: "13px", transition: "all 0.2s" }}
@@ -381,7 +439,7 @@ function SummaryPageImpl(): React.JSX.Element {
         </div>
 
         {/* Overall status */}
-        <div style={{
+        <div className="card-print" style={{
           backgroundColor: "white", borderRadius: "12px",
           border: `2px solid ${allCompliant ? "#E2E8F0" : "#FCA5A5"}`,
           padding: "20px 24px", marginBottom: "16px",
@@ -410,7 +468,7 @@ function SummaryPageImpl(): React.JSX.Element {
 
         {/* Financial highlight card (shown only if financial data exists) */}
         {(financialData.balance != null || financialData.incoming != null) && (
-          <div style={{
+          <div className="card-print" style={{
             backgroundColor: "white", borderRadius: "12px", border: "1px solid #E2E8F0",
             padding: "18px 24px", marginBottom: "16px", position: "relative"
           }}>
@@ -446,7 +504,7 @@ function SummaryPageImpl(): React.JSX.Element {
         )}
 
         {/* Workflow results */}
-        <div style={{ backgroundColor: "white", borderRadius: "12px", border: "1px solid #E2E8F0", padding: "20px 24px", marginBottom: "16px" }}>
+        <div className="card-print" style={{ backgroundColor: "white", borderRadius: "12px", border: "1px solid #E2E8F0", padding: "20px 24px", marginBottom: "16px" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "18px" }}>
             <div>
               <h3 style={{ margin: "0 0 4px", fontSize: "16px", fontWeight: "700", color: "#0F172A" }}>Workflow Results</h3>
@@ -472,6 +530,7 @@ function SummaryPageImpl(): React.JSX.Element {
                 </div>
                 <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
                   <button 
+                    className="no-print"
                     onClick={() => { setActiveCommentSection(`Workflow: ${w.title}`); setCommentText(comments[`Workflow: ${w.title}`] || ""); }} 
                     style={{ background: "none", border: "none", color: "#64748B", cursor: "pointer", display: "flex", alignItems: "center", gap: "4px", fontSize: "12px", fontWeight: "600", padding: "4px", marginRight: "4px" }}
                     title="Add Comment"
@@ -492,7 +551,7 @@ function SummaryPageImpl(): React.JSX.Element {
         </div>
 
         {/* Employee summary */}
-        <div style={{ backgroundColor: "white", borderRadius: "12px", border: "1px solid #E2E8F0", padding: "20px 24px", marginBottom: "24px" }}>
+        <div className="card-print" style={{ backgroundColor: "white", borderRadius: "12px", border: "1px solid #E2E8F0", padding: "20px 24px", marginBottom: "24px" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
             <h3 style={{ margin: 0, fontSize: "16px", fontWeight: "700", color: "#0F172A" }}>Employee Summary</h3>
           </div>
@@ -531,16 +590,39 @@ function SummaryPageImpl(): React.JSX.Element {
           )}
         </div>
 
+        {/* Comments Section (Visible in Report/Print) */}
+        {Object.entries(comments).some(([_, text]) => text && text.trim() !== "") && (
+          <div className="card-print" style={{ backgroundColor: "white", borderRadius: "12px", border: "1px solid #E2E8F0", padding: "20px 24px", marginBottom: "24px" }}>
+            <h3 style={{ margin: "0 0 16px", fontSize: "16px", fontWeight: "700", color: "#0F172A" }}>Validation Comments & Feedback</h3>
+            <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+              {Object.entries(comments).map(([section, text]) => (
+                text && text.trim() !== "" && (
+                  <div key={section} style={{ paddingBottom: "12px", borderBottom: "1px solid #F1F5F9" }}>
+                    <div style={{ fontSize: "12px", fontWeight: "700", color: "#0852C9", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: "4px" }}>{section}</div>
+                    <div style={{ fontSize: "13.5px", color: "#334155", lineHeight: "1.5", whiteSpace: "pre-wrap" }}>{text}</div>
+                  </div>
+                )
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* Actions */}
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
-          <button onClick={handleStartNew} style={{
-            display: "flex", alignItems: "center", justifyContent: "center", gap: "8px",
-            padding: "13px 20px", backgroundColor: "white", color: "#374151",
-            border: "1.5px solid #D1D5DB", borderRadius: "8px",
-            fontSize: "14px", fontWeight: "600", cursor: "pointer",
-          }}>
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M2 8a6 6 0 016-6 6 6 0 015.5 3.6M14 8a6 6 0 01-6 6 6 6 0 01-5.5-3.6" stroke="#374151" strokeWidth="1.5" strokeLinecap="round" /><path d="M14 4v3.5H10.5" stroke="#374151" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>
-            Start New Validation
+        <div className="no-print" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
+          <button 
+            onClick={handleStartNew} 
+            disabled={isSubmitting}
+            style={{
+              display: "flex", alignItems: "center", justifyContent: "center", gap: "8px",
+              padding: "13px 20px", backgroundColor: isSubmitting ? "#F1F5F9" : "white", color: "#374151",
+              border: "1.5px solid #D1D5DB", borderRadius: "8px",
+              fontSize: "14px", fontWeight: "600", cursor: isSubmitting ? "not-allowed" : "pointer",
+            }}
+          >
+            {isSubmitting ? <SpinnerIcon color="#0852C9" /> : (
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M2 8a6 6 0 016-6 6 6 0 015.5 3.6M14 8a6 6 0 01-6 6 6 6 0 01-5.5-3.6" stroke="#374151" strokeWidth="1.5" strokeLinecap="round" /><path d="M14 4v3.5H10.5" stroke="#374151" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>
+            )}
+            {isSubmitting ? "Starting..." : "Start New Validation"}
           </button>
           <button onClick={() => window.print()} style={{
             display: "flex", alignItems: "center", justifyContent: "center", gap: "8px",
@@ -552,6 +634,8 @@ function SummaryPageImpl(): React.JSX.Element {
             Download Report
           </button>
         </div>
+        </>
+        )}
       </div>
 
       {/* Feedback/Comment Modal */}

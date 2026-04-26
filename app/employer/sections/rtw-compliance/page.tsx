@@ -83,11 +83,19 @@ function NoMigrantScreen({ onContinue }: { onContinue: () => void }) {
         <p style={{ margin: "4px 0 0", fontSize: "14px", color: "#64748B", maxWidth: "380px", lineHeight: "1.65" }}>
           All employees are British/Irish and skip RTW validation.
         </p>
-        <button onClick={onContinue} style={{
-          marginTop: "12px", padding: "11px 28px", backgroundColor: "#0852C9",
-          color: "white", border: "none", borderRadius: "8px",
-          fontSize: "14px", fontWeight: "600", cursor: "pointer",
-        }}>
+        <button 
+          onClick={() => {
+            const btn = event?.currentTarget as HTMLButtonElement;
+            if (btn) btn.disabled = true;
+            onContinue();
+          }} 
+          style={{
+            marginTop: "12px", padding: "11px 28px", backgroundColor: "#0852C9",
+            color: "white", border: "none", borderRadius: "8px",
+            fontSize: "14px", fontWeight: "600", cursor: "pointer",
+            display: "flex", alignItems: "center", gap: "8px"
+          }}
+        >
           Continue to Pension Compliance
         </button>
       </div>
@@ -110,6 +118,7 @@ function RTWVerificationScreen({ migrants, onBackToStaffList, onContinue, onSave
   const formattedStart = employee?.startDate ? formatDate(employee.startDate) : null;
 
   const [isExtracting, setIsExtracting] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [extractedData, setExtractedData] = useState<any>(null);
   const [manualName, setManualName] = useState("");
   const [checkDate, setCheckDate] = useState("");
@@ -338,39 +347,59 @@ function RTWVerificationScreen({ migrants, onBackToStaffList, onContinue, onSave
           {currentIndex < migrants.length - 1 ? (
             <button 
               onClick={async () => {
-                const data = {
-                  passport_number: extractedData?.reference_number || employee.documentNumber,
-                  check_date: checkDate || null,
-                  company_name: companyName || null
-                };
-                await onSaveEmployee(employee.id, data);
-                setCurrentIndex(currentIndex + 1);
-                setExtractedData(null);
-                setManualName("");
+                setIsSubmitting(true);
+                try {
+                  const data = {
+                    passport_number: extractedData?.reference_number || employee.documentNumber,
+                    check_date: checkDate || null,
+                    company_name: companyName || null
+                  };
+                  await onSaveEmployee(employee.id, data);
+                  setCurrentIndex(currentIndex + 1);
+                  setExtractedData(null);
+                  setManualName("");
+                } finally {
+                  setIsSubmitting(false);
+                }
               }} 
+              disabled={isSubmitting}
               style={{
-                padding: "10px 18px", backgroundColor: "#0852C9", color: "white",
+                padding: "10px 18px", backgroundColor: isSubmitting ? "#93ABDE" : "#0852C9", color: "white",
                 border: "none", borderRadius: "8px",
-                fontSize: "13.5px", fontWeight: "600", cursor: "pointer",
+                fontSize: "13.5px", fontWeight: "600", cursor: isSubmitting ? "not-allowed" : "pointer",
+                display: "flex", alignItems: "center", gap: "8px"
               }}
-            >Next Employee →</button>
+            >
+              {isSubmitting && <SpinnerIcon color="#fff" />}
+              Next Employee →
+            </button>
           ) : (
             <button 
               onClick={async () => {
-                const data = {
-                  passport_number: extractedData?.reference_number || employee.documentNumber,
-                  check_date: checkDate || null,
-                  company_name: companyName || null
-                };
-                await onSaveEmployee(employee.id, data);
-                onContinue();
+                setIsSubmitting(true);
+                try {
+                  const data = {
+                    passport_number: extractedData?.reference_number || employee.documentNumber,
+                    check_date: checkDate || null,
+                    company_name: companyName || null
+                  };
+                  await onSaveEmployee(employee.id, data);
+                  onContinue();
+                } finally {
+                  // Keep it true if we are navigating away
+                }
               }} 
+              disabled={isSubmitting}
               style={{
-                padding: "10px 18px", backgroundColor: "#0852C9", color: "white",
+                padding: "10px 18px", backgroundColor: isSubmitting ? "#93ABDE" : "#0852C9", color: "white",
                 border: "none", borderRadius: "8px",
-                fontSize: "13.5px", fontWeight: "600", cursor: "pointer",
+                fontSize: "13.5px", fontWeight: "600", cursor: isSubmitting ? "not-allowed" : "pointer",
+                display: "flex", alignItems: "center", gap: "8px"
               }}
-            >Continue to Pension Compliance</button>
+            >
+              {isSubmitting && <SpinnerIcon color="#fff" />}
+              {isSubmitting ? "Processing..." : "Continue to Pension Compliance"}
+            </button>
           )}
         </div>
       </div>
@@ -428,7 +457,7 @@ function RTWComplianceImpl() {
                 company_name: e.company_name,
               }));
               setEmployees(mapped);
-              sessionStorage.setItem("hr_employees", JSON.stringify(mapped));
+              sessionStorage.setItem(`hr_employees_${id}`, JSON.stringify(mapped));
               dataLoaded = true;
             }
           }
@@ -437,9 +466,9 @@ function RTWComplianceImpl() {
         console.error("Error fetching RTW employees via API", err);
       }
       
-      if (!dataLoaded) {
+      if (!dataLoaded && recordId) {
         try {
-          const saved = sessionStorage.getItem("hr_employees");
+          const saved = sessionStorage.getItem(`hr_employees_${recordId}`);
           if (saved) setEmployees(JSON.parse(saved));
         } catch {}
       }
@@ -452,9 +481,10 @@ function RTWComplianceImpl() {
   const hasMigrants = migrants.length > 0;
 
   const markRTWComplete = () => {
+    if (!recordId) return;
     try {
-      const p = JSON.parse(sessionStorage.getItem("hr_progress") || "{}");
-      sessionStorage.setItem("hr_progress", JSON.stringify({ ...p, rtw: true }));
+      const p = JSON.parse(sessionStorage.getItem(`hr_progress_${recordId}`) || "{}");
+      sessionStorage.setItem(`hr_progress_${recordId}`, JSON.stringify({ ...p, rtw: true }));
     } catch {}
   };
 
@@ -476,16 +506,33 @@ function RTWComplianceImpl() {
 
     if (recordId) {
       const token = getClientToken();
-      await updateHRValidationRecordAction(recordId, {
-        result_complete_sections: {
-          has_migrants: hasMigrants,
-          migrant_count: migrants.length,
-        }
-      }, token);
+      try {
+        const record = await getHRRecord(recordId);
+        await updateHRValidationRecordAction(recordId, {
+          result_complete_sections: {
+            ...(record?.result_complete_sections || {}),
+            has_migrants: hasMigrants,
+            migrant_count: migrants.length,
+          }
+        }, token);
+      } catch (err) {
+        console.error("Error updating RTW status:", err);
+      }
     }
 
     router.push(`/employer/sections/pension?recordId=${recordId}`);
   };
+
+  async function getHRRecord(id: number) {
+    try {
+      const token = getClientToken();
+      const res = await listHRValidationRecordsAction(token);
+      if (res.success && res.data) {
+        return res.data.find(r => r.id === id);
+      }
+      return null;
+    } catch { return null; }
+  }
 
   return (
     <div style={{ fontFamily: "'Segoe UI', system-ui, sans-serif", backgroundColor: "#F1F5F9", minHeight: "100vh" }}>
