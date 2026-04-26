@@ -141,6 +141,8 @@ export type Employee = {
   rtw_document_type?: string | null;
   visa_expiry_date?: string | null;
   passport_number?: string | null;
+  check_date?: string | null;
+  company_name?: string | null;
   [key: string]: any;
 };
 

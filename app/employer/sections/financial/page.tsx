@@ -5,11 +5,12 @@ import { useRouter, useSearchParams } from "next/navigation";
 import axios from "axios";
 import toast from "react-hot-toast";
 import HRValidationTabs from "../_components/HRValidationTabs";
-import { 
-  updateHRValidationRecordAction, 
-  listFinancialRecordsAction, 
-  createFinancialRecordAction, 
-  updateFinancialRecordAction 
+import {
+  updateHRValidationRecordAction,
+  listFinancialRecordsAction,
+  createFinancialRecordAction,
+  updateFinancialRecordAction,
+  listHRValidationRecordsAction
 } from "@/app/employer/sections/action/action";
 import { getClientToken } from "@/app/employer/sections/company/page";
 
@@ -574,19 +575,19 @@ function InvestmentsStep({ onNext, onPrev, onSave, initialTransactions, initialO
 
   // Sync manual balances with parent state in real-time
   useEffect(() => {
-    onSave({ 
-      opening_balance: parseFloat(manualOpening) || 0, 
-      closing_balance: parseFloat(manualClosing) || 0 
+    onSave({
+      opening_balance: parseFloat(manualOpening) || 0,
+      closing_balance: parseFloat(manualClosing) || 0
     });
   }, [manualOpening, manualClosing]);
 
-  const handleNext = (): void => { 
-    onSave({ 
+  const handleNext = (): void => {
+    onSave({
       transactions,
-      opening_balance: parseFloat(manualOpening) || 0, 
-      closing_balance: parseFloat(manualClosing) || 0 
-    }); 
-    onNext(); 
+      opening_balance: parseFloat(manualOpening) || 0,
+      closing_balance: parseFloat(manualClosing) || 0
+    });
+    onNext();
   };
 
   return (
@@ -993,11 +994,24 @@ function FinancialPageImpl(): React.JSX.Element {
     if (id) {
       const numId = Number(id);
       setRecordId(numId);
-      
+
       // Fetch financial records from the backend
       (async () => {
         try {
           const token = getClientToken();
+          
+          // Fetch HR Validation Record to get transactions
+          const hrRes = await listHRValidationRecordsAction(token);
+          if (hrRes.success && hrRes.data) {
+            const hrRecord = hrRes.data.find((r: any) => r.id === numId);
+            if (hrRecord && hrRecord.transactions) {
+              setFinancialData(prev => ({
+                ...prev,
+                transactions: typeof hrRecord.transactions === 'string' ? JSON.parse(hrRecord.transactions) : hrRecord.transactions
+              }));
+            }
+          }
+
           const res = await listFinancialRecordsAction(token);
           if (res.success && res.data) {
             const finRecord = res.data.find(r => r.HRValidationRecord_id === numId);
@@ -1052,7 +1066,7 @@ function FinancialPageImpl(): React.JSX.Element {
 
     if (recordId) {
       const token = getClientToken();
-      
+
       // Save global transactions in HR Validation Record
       await updateHRValidationRecordAction(recordId, {
         transactions: financialData.transactions,
@@ -1102,11 +1116,11 @@ function FinancialPageImpl(): React.JSX.Element {
         {hydrated && step === "balance" && <BalanceStep onNext={() => { handleNext("balance"); }} onSave={handleSave} initialBalance={financialData.balance} />}
         {hydrated && step === "cashflow" && <CashFlowStep onNext={() => handleNext("cashflow")} onPrev={() => setStep("balance")} onSave={handleSave} initialIncoming={financialData.incoming} initialOutgoing={financialData.outgoing} />}
         {hydrated && step === "investments" && (
-          <InvestmentsStep 
-            onNext={() => handleNext("investments")} 
-            onPrev={() => setStep("cashflow")} 
-            onSave={handleSave} 
-            initialTransactions={financialData.transactions} 
+          <InvestmentsStep
+            onNext={() => handleNext("investments")}
+            onPrev={() => setStep("cashflow")}
+            onSave={handleSave}
+            initialTransactions={financialData.transactions}
             initialOpening={financialData.opening_balance}
             initialClosing={financialData.closing_balance}
           />

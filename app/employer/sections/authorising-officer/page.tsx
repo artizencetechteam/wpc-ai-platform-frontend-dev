@@ -222,17 +222,36 @@ function CredRow({ label, desc, checked, onChange }: CredRowProps): React.JSX.El
 interface AODetailsFormProps {
   mode: string;
   employees: Employee[];
+  initialData?: {
+    id?: number | string;
+    name?: string;
+    role?: string;
+    creds?: Creds;
+  };
   onValidate: (status: AOStatusResult | null, data?: { id?: number | string; role: string; creds: Creds }) => void;
   onContinue: () => void;
   onChangeMode: () => void;
 }
 
-function AODetailsForm({ mode, employees, onValidate, onContinue, onChangeMode }: AODetailsFormProps): React.JSX.Element {
+function AODetailsForm({ mode, employees, initialData, onValidate, onContinue, onChangeMode }: AODetailsFormProps): React.JSX.Element {
   const [selectedEmp, setSelectedEmp] = useState<string>("");
   const [name, setName] = useState<string>("");
   const [role, setRole] = useState<string>("");
   const [creds, setCreds] = useState<Creds>({ seniorMost: false, director: false, onPayroll: false, holdsShares: false });
   const [validated, setValidated] = useState<boolean>(false);
+
+  // Populate from initialData on mount or when initialData changes
+  useEffect(() => {
+    if (initialData) {
+      if (initialData.name) {
+        setName(initialData.name);
+        if (mode === "staff") setSelectedEmp(initialData.name);
+      }
+      if (initialData.role) setRole(initialData.role);
+      if (initialData.creds) setCreds(initialData.creds);
+      setValidated(true);
+    }
+  }, [initialData, mode]);
 
   const toggleCred = (key: keyof Creds): void => {
     setCreds((prev) => ({ ...prev, [key]: !prev[key] }));
@@ -243,7 +262,20 @@ function AODetailsForm({ mode, employees, onValidate, onContinue, onChangeMode }
     setSelectedEmp(empName);
     setName(empName);
     setValidated(false);
-    setCreds({ seniorMost: false, director: false, onPayroll: false, holdsShares: false });
+    
+    // Check if this employee already has AO data
+    const emp = employees.find(e => e.employee_full_name === empName);
+    if (emp) {
+      setRole(emp.role_in_company || "");
+      setCreds({
+        seniorMost: !!emp.AO_Credentials_senior_most_employee,
+        director: !!emp.AO_Credentials_company_director,
+        onPayroll: !!emp.AO_Credentials_on_payroll,
+        holdsShares: !!emp.AO_Credentials_holds_shared,
+      });
+    } else {
+      setCreds({ seniorMost: false, director: false, onPayroll: false, holdsShares: false });
+    }
   };
 
   const status = getAOStatus(creds);
@@ -264,6 +296,8 @@ function AODetailsForm({ mode, employees, onValidate, onContinue, onChangeMode }
   const nameValid = name.trim().length > 0;
   const roleValid = role.trim().length > 0;
   const canValidate = nameValid && roleValid;
+
+  const selectedEmployeeObj = mode === "staff" ? employees.find(e => e.employee_full_name === selectedEmp) : null;
 
   return (
     <div style={{ backgroundColor: "white", borderRadius: "10px", border: "1px solid #E2E8F0", padding: "24px 26px", marginBottom: "16px" }}>
@@ -303,6 +337,12 @@ function AODetailsForm({ mode, employees, onValidate, onContinue, onChangeMode }
               <path d="M3 5l4 4 4-4" stroke="#64748B" strokeWidth="1.5" strokeLinecap="round" />
             </svg>
           </div>
+          {selectedEmployeeObj && (
+            <div style={{ marginTop: "6px", fontSize: "12px", color: "#64748B", display: "flex", alignItems: "center", gap: "6px" }}>
+              <div style={{ width: "8px", height: "8px", borderRadius: "50%", backgroundColor: selectedEmployeeObj.status === "approved" ? "#16A34A" : "#F59E0B" }} />
+              Current Status: <span style={{ fontWeight: "600", color: "#0F172A" }}>{selectedEmployeeObj.status || "Pending"}</span>
+            </div>
+          )}
         </div>
       )}
 
@@ -380,18 +420,19 @@ function AODetailsForm({ mode, employees, onValidate, onContinue, onChangeMode }
           Validate Authorising Officer
         </button>
 
-        {validated && status?.ok && (
-          <button
-            onClick={onContinue}
-            style={{
-              width: "100%", padding: "13px", backgroundColor: "#0852C9",
-              color: "white", border: "none", borderRadius: "8px",
-              fontSize: "14px", fontWeight: "600", cursor: "pointer",
-            }}
-          >
-            Continue to Contract Validation
-          </button>
-        )}
+        <button
+          onClick={onContinue}
+          style={{
+            width: "100%", padding: "13px", 
+            backgroundColor: (validated && status?.ok) ? "#0852C9" : "white",
+            color: (validated && status?.ok) ? "white" : "#374151",
+            border: (validated && status?.ok) ? "none" : "1.5px solid #D1D5DB",
+            borderRadius: "8px",
+            fontSize: "14px", fontWeight: "600", cursor: "pointer",
+          }}
+        >
+          {(validated && status?.ok) ? "Continue to Contract Validation" : "Skip / Continue Anyway"}
+        </button>
       </div>
     </div>
   );
@@ -420,8 +461,27 @@ function AuthorisingOfficerImpl(): React.JSX.Element {
     const queryId = searchParams.get("recordId") || searchParams.get("id");
     const id = queryId || sessionStorage.getItem("current_hr_record_id");
     if (id) {
-       setRecordId(Number(id));
-       loadEmployees(Number(id));
+      const numId = Number(id);
+      setRecordId(numId);
+      loadEmployees(numId);
+
+      // Hydrate AO state from server
+      (async () => {
+        try {
+          const token = getClientToken();
+          const res = await listHRValidationRecordsAction(token);
+          if (res.success && res.data) {
+            const record = res.data.find((r) => r.id === numId);
+            if (record && record.result_complete_sections) {
+              const saved = record.result_complete_sections;
+              if (saved.ao_mode) setMode(saved.ao_mode);
+              if (saved.ao_status) setAOStatus(saved.ao_status);
+            }
+          }
+        } catch (err) {
+          console.error("Error hydrating AO state:", err);
+        }
+      })();
     }
 
     try {
@@ -493,6 +553,26 @@ function AuthorisingOfficerImpl(): React.JSX.Element {
     { id: "new", icon: <PlusIcon />, title: "Add New Individual", desc: "Add a new person as Authorising Officer" },
   ];
 
+  const initialAO = employees.find(e =>
+    e.role_in_company ||
+    e.AO_Credentials_senior_most_employee ||
+    e.AO_Credentials_company_director ||
+    e.AO_Credentials_on_payroll ||
+    e.AO_Credentials_holds_shared
+  );
+
+  const initialFormData = initialAO ? {
+    id: initialAO.id,
+    name: initialAO.employee_full_name,
+    role: initialAO.role_in_company || "",
+    creds: {
+      seniorMost: !!initialAO.AO_Credentials_senior_most_employee,
+      director: !!initialAO.AO_Credentials_company_director,
+      onPayroll: !!initialAO.AO_Credentials_on_payroll,
+      holdsShares: !!initialAO.AO_Credentials_holds_shared,
+    }
+  } : undefined;
+
   return (
     <div style={{ fontFamily: "'Segoe UI', system-ui, sans-serif", backgroundColor: "#F1F5F9", minHeight: "100vh" }}>
 
@@ -541,6 +621,7 @@ function AuthorisingOfficerImpl(): React.JSX.Element {
             <AODetailsForm
               mode={mode}
               employees={employees}
+              initialData={initialFormData}
               onValidate={(status, data) => {
                 setAOStatus(status);
                 if (data) setAoData(data);

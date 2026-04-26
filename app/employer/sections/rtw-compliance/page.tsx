@@ -19,9 +19,9 @@ type Employee = {
   documentType?: string;
   documentNumber?: string;
   startDate?: string;
-  visaExpiry?: string;
-  rtwDocumentType?: string;
   passportNumber?: string;
+  check_date?: string | null;
+  company_name?: string | null;
 };
 
 // --- Icons ---
@@ -112,7 +112,23 @@ function RTWVerificationScreen({ migrants, onBackToStaffList, onContinue, onSave
   const [isExtracting, setIsExtracting] = useState(false);
   const [extractedData, setExtractedData] = useState<any>(null);
   const [manualName, setManualName] = useState("");
+  const [checkDate, setCheckDate] = useState("");
+  const [companyName, setCompanyName] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (employee) {
+      const toISODate = (val?: string | null) => {
+        if (!val) return "";
+        const d = new Date(val);
+        if (isNaN(d.getTime())) return val;
+        return d.toISOString().split('T')[0];
+      };
+      setCheckDate(toISODate(extractedData?.check_date || employee.check_date));
+      const rawCompany = extractedData?.company_name || employee.company_name || "";
+      setCompanyName(rawCompany.replace(/\s+/g, " ").trim());
+    }
+  }, [currentIndex, extractedData, employee]);
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -264,25 +280,21 @@ function RTWVerificationScreen({ migrants, onBackToStaffList, onContinue, onSave
                 )}
               </div>
 
-              {/* Document Type */}
-              {(extractedData?.rtw_document_type || employee.rtwDocumentType || employee.documentType || hasDocument) && (
-                <div>
-                  <div style={{ fontSize: "11px", color: "#6B7280", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: "4px" }}>Document Type</div>
-                  <div style={{ fontSize: "14px", fontWeight: "600", color: "#0F172A" }}>
-                    {extractedData?.rtw_document_type || employee.rtwDocumentType || employee.documentType || "Uploaded Document"}
-                  </div>
+              {/* Check Date */}
+              <div>
+                <div style={{ fontSize: "11px", color: "#6B7280", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: "4px" }}>Check Date</div>
+                <div style={{ fontSize: "14px", fontWeight: "600", color: "#0F172A" }}>
+                  {checkDate ? formatDate(checkDate) : "N/A"}
                 </div>
-              )}
+              </div>
 
-              {/* Visa Expiry */}
-              {(extractedData?.visa_expiry_date || employee.visaExpiry || hasDocument) && (
-                <div>
-                  <div style={{ fontSize: "11px", color: "#6B7280", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: "4px" }}>Visa Expiry Date</div>
-                  <div style={{ fontSize: "14px", fontWeight: "600", color: "#0F172A" }}>
-                    {extractedData?.visa_expiry_date ? formatDate(extractedData.visa_expiry_date) : (employee.visaExpiry || "N/A")}
-                  </div>
+              {/* Company Name */}
+              <div>
+                <div style={{ fontSize: "11px", color: "#6B7280", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: "4px" }}>Company Name</div>
+                <div style={{ fontSize: "14px", fontWeight: "600", color: "#0F172A" }}>
+                  {companyName || "N/A"}
                 </div>
-              )}
+              </div>
 
               {/* Reference Number */}
               {(extractedData?.reference_number || employee.documentNumber) && (
@@ -327,9 +339,9 @@ function RTWVerificationScreen({ migrants, onBackToStaffList, onContinue, onSave
             <button 
               onClick={async () => {
                 const data = {
-                  rtw_document_type: extractedData?.rtw_document_type || employee.rtwDocumentType || employee.documentType,
-                  visa_expiry_date: extractedData?.visa_expiry_date || employee.visaExpiry,
-                  passport_number: extractedData?.reference_number || employee.documentNumber
+                  passport_number: extractedData?.reference_number || employee.documentNumber,
+                  check_date: checkDate || null,
+                  company_name: companyName || null
                 };
                 await onSaveEmployee(employee.id, data);
                 setCurrentIndex(currentIndex + 1);
@@ -346,9 +358,9 @@ function RTWVerificationScreen({ migrants, onBackToStaffList, onContinue, onSave
             <button 
               onClick={async () => {
                 const data = {
-                  rtw_document_type: extractedData?.rtw_document_type || employee.rtwDocumentType || employee.documentType,
-                  visa_expiry_date: extractedData?.visa_expiry_date || employee.visaExpiry,
-                  passport_number: extractedData?.reference_number || employee.documentNumber
+                  passport_number: extractedData?.reference_number || employee.documentNumber,
+                  check_date: checkDate || null,
+                  company_name: companyName || null
                 };
                 await onSaveEmployee(employee.id, data);
                 onContinue();
@@ -411,9 +423,9 @@ function RTWComplianceImpl() {
                 documentType: e.rtw_document_url ? "Uploaded Document" : "",
                 documentNumber: e.passport_number || (e.rtw_document_url ? e.rtw_document_url : ""),
                 startDate: e.employment_start_date,
-                visaExpiry: e.visa_expiry_date,
-                rtwDocumentType: e.rtw_document_type,
                 passportNumber: e.passport_number,
+                check_date: e.check_date,
+                company_name: e.company_name,
               }));
               setEmployees(mapped);
               sessionStorage.setItem("hr_employees", JSON.stringify(mapped));

@@ -417,7 +417,28 @@ function PensionComplianceImpl() {
       if (savedEmps) setEmployees(JSON.parse(savedEmps));
     } catch {}
 
-    if (resolvedId) loadEmployees(resolvedId);
+    if (resolvedId) {
+      loadEmployees(resolvedId);
+
+      // Hydrate pension state from server
+      (async () => {
+        try {
+          const token = getClientToken();
+          const res = await listHRValidationRecordsAction(token);
+          if (res.success && res.data) {
+            const record = res.data.find((r) => r.id === resolvedId);
+            if (record && record.result_complete_sections) {
+              const saved = record.result_complete_sections;
+              if (saved.pension && saved.pension.companyRegistered) {
+                setCompanyRegistered(saved.pension.companyRegistered);
+              }
+            }
+          }
+        } catch (err) {
+          console.error("Error hydrating pension state:", err);
+        }
+      })();
+    }
   }, [searchParams]);
 
   async function loadEmployees(recordId: number) {
@@ -426,23 +447,24 @@ function PensionComplianceImpl() {
       const res = await listEmployeesAction(recordId, token);
       if (res.success && res.data) {
         setEmployees(res.data);
-        
-        // Pre-populate checks from backend if available
-        setEligibilityChecks(prev => {
+
+        // Pre-populate checks from backend
+        setEligibilityChecks((prev) => {
           const newChecks = { ...prev };
-          let changed = false;
           (res.data || []).forEach((emp: any) => {
-            if (!newChecks[emp.id]) {
+            // Priority: If backend has non-null/non-default data, use it
+            // We check for opted_out or pension_status to see if it was ever touched
+            const hasData = emp.opted_out !== null || emp.pension_status !== null;
+            if (hasData || !newChecks[emp.id]) {
               newChecks[emp.id] = {
                 age22: emp.min_22_year_age || false,
                 earnings10k: emp.earning_gbp_10k_above || false,
                 optedOut: emp.opted_out || false,
-                autoEnrolled: !!emp.auto_enrollment_date,
+                autoEnrolled: emp.pension_status === "enrolled" || emp.pension_status === "auto_enrolled" || !!emp.auto_enrollment_date,
               };
-              changed = true;
             }
           });
-          return changed ? newChecks : prev;
+          return newChecks;
         });
       }
     } catch (err) {
