@@ -62,14 +62,18 @@ interface SelectOption {
 
 // ─── Session helpers ──────────────────────────────────────────────────────────
 
-const getProgress = (): Progress => {
-  try { return JSON.parse(sessionStorage.getItem("hr_progress") || "{}"); } catch { return {}; }
+const getProgress = (recordId: string | number | null): Progress => {
+  try {
+    const key = recordId ? `hr_progress_${recordId}` : "hr_progress";
+    return JSON.parse(sessionStorage.getItem(key) || "{}");
+  } catch { return {}; }
 };
 
-const markComplete = (key: string): void => {
+const markComplete = (recordId: string | number | null, key: string): void => {
   try {
-    const p = getProgress();
-    sessionStorage.setItem("hr_progress", JSON.stringify({ ...p, [key]: true }));
+    const p = getProgress(recordId);
+    const storageKey = recordId ? `hr_progress_${recordId}` : "hr_progress";
+    sessionStorage.setItem(storageKey, JSON.stringify({ ...p, [key]: true }));
   } catch {}
 };
 
@@ -78,7 +82,7 @@ const isTabUnlocked = (tabId: string): boolean => {
   const rid = typeof window !== "undefined" ? sessionStorage.getItem("current_hr_record_id") : null;
   const hasCompany = !!(rid && sessionStorage.getItem(`company_name_${rid}`));
   if (["staff", "rtw", "pension", "auth"].includes(tabId)) return hasCompany;
-  const p = getProgress();
+  const p = getProgress(rid);
   if (tabId === "contracts") return !!p.auth && hasCompany;
   if (tabId === "financial") return !!p.contracts && hasCompany;
   if (tabId === "summary") return !!p.financial && hasCompany;
@@ -231,14 +235,16 @@ interface AODetailsFormProps {
   onValidate: (status: AOStatusResult | null, data?: { id?: number | string; role: string; creds: Creds }) => void;
   onContinue: () => void;
   onChangeMode: () => void;
+  isSubmitting?: boolean;
 }
 
-function AODetailsForm({ mode, employees, initialData, onValidate, onContinue, onChangeMode }: AODetailsFormProps): React.JSX.Element {
+function AODetailsForm({ mode, employees, initialData, onValidate, onContinue, onChangeMode, isSubmitting = false }: AODetailsFormProps): React.JSX.Element {
   const [selectedEmp, setSelectedEmp] = useState<string>("");
   const [name, setName] = useState<string>("");
   const [role, setRole] = useState<string>("");
   const [creds, setCreds] = useState<Creds>({ seniorMost: false, director: false, onPayroll: false, holdsShares: false });
   const [validated, setValidated] = useState<boolean>(false);
+  const [isValidating, setIsValidating] = useState<boolean>(false);
 
   // Populate from initialData on mount or when initialData changes
   useEffect(() => {
@@ -280,10 +286,14 @@ function AODetailsForm({ mode, employees, initialData, onValidate, onContinue, o
 
   const status = getAOStatus(creds);
 
-  const handleValidate = (): void => {
+  const handleValidate = async (): Promise<void> => {
+    setIsValidating(true);
+    // Simulate a brief delay for UX feel or actually just run it
+    await new Promise(resolve => setTimeout(resolve, 600));
     setValidated(true);
     const empId = mode === "staff" ? employees.find(e => e.employee_full_name === name)?.id : undefined;
     onValidate(status, { id: empId, role, creds });
+    setIsValidating(false);
   };
 
   const credList: CredItem[] = [
@@ -409,29 +419,34 @@ function AODetailsForm({ mode, employees, initialData, onValidate, onContinue, o
       <div style={{ marginTop: "16px", display: "flex", flexDirection: "column", gap: "10px" }}>
         <button
           onClick={handleValidate}
-          disabled={!canValidate}
+          disabled={!canValidate || isValidating || isSubmitting}
           style={{
-            width: "100%", padding: "13px", backgroundColor: "#0852C9",
+            width: "100%", padding: "13px", backgroundColor: (!canValidate || isValidating || isSubmitting) ? "#93ABDE" : "#0852C9",
             color: "white", border: "none", borderRadius: "8px",
-            fontSize: "14px", fontWeight: "600", cursor: canValidate ? "pointer" : "not-allowed",
-            opacity: canValidate ? 1 : 0.5,
+            fontSize: "14px", fontWeight: "600", cursor: (!canValidate || isValidating || isSubmitting) ? "not-allowed" : "pointer",
+            opacity: (!canValidate || isValidating || isSubmitting) ? 0.7 : 1,
+            display: "flex", alignItems: "center", justifyContent: "center", gap: "8px"
           }}
         >
-          Validate Authorising Officer
+          {(isValidating || isSubmitting) && <SpinnerIcon color="#fff" />}
+          {isValidating ? "Validating..." : "Validate Authorising Officer"}
         </button>
 
         <button
           onClick={onContinue}
+          disabled={isSubmitting}
           style={{
             width: "100%", padding: "13px", 
-            backgroundColor: (validated && status?.ok) ? "#0852C9" : "white",
+            backgroundColor: (validated && status?.ok) ? (isSubmitting ? "#93ABDE" : "#0852C9") : "white",
             color: (validated && status?.ok) ? "white" : "#374151",
             border: (validated && status?.ok) ? "none" : "1.5px solid #D1D5DB",
             borderRadius: "8px",
-            fontSize: "14px", fontWeight: "600", cursor: "pointer",
+            fontSize: "14px", fontWeight: "600", cursor: isSubmitting ? "not-allowed" : "pointer",
+            display: "flex", alignItems: "center", justifyContent: "center", gap: "8px"
           }}
         >
-          {(validated && status?.ok) ? "Continue to Contract Validation" : "Skip / Continue Anyway"}
+          {isSubmitting && <SpinnerIcon color={(validated && status?.ok) ? "#fff" : "#0852C9"} />}
+          {isSubmitting ? "Processing..." : (validated && status?.ok) ? "Continue to Contract Validation" : "Skip / Continue Anyway"}
         </button>
       </div>
     </div>
@@ -456,6 +471,7 @@ function AuthorisingOfficerImpl(): React.JSX.Element {
   const [aoStatus, setAOStatus] = useState<AOStatusResult | null>(null);
   const [recordId, setRecordId] = useState<number | null>(null);
   const [aoData, setAoData] = useState<{ id?: number | string; role?: string; creds?: Creds } | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
     const queryId = searchParams.get("recordId") || searchParams.get("id");
@@ -485,8 +501,10 @@ function AuthorisingOfficerImpl(): React.JSX.Element {
     }
 
     try {
-      const saved = sessionStorage.getItem("hr_employees");
-      if (saved) setEmployees(JSON.parse(saved) as Employee[]);
+      if (id) {
+        const saved = sessionStorage.getItem(`hr_employees_${id}`);
+        if (saved) setEmployees(JSON.parse(saved) as Employee[]);
+      }
     } catch {}
   }, [searchParams]);
 
@@ -507,33 +525,40 @@ function AuthorisingOfficerImpl(): React.JSX.Element {
   };
 
   const handleContinue = async (): Promise<void> => {
-    markComplete("auth");
+    setIsSubmitting(true);
+    markComplete(recordId, "auth");
 
     if (recordId) {
       const token = getClientToken();
       
-      // 1. Save record status
-      await updateHRValidationRecordAction(recordId, {
-        result_complete_sections: {
-          ...(await getSavedResults(recordId)),
-          ao_status: aoStatus,
-          ao_mode: mode,
-        }
-      }, token);
-
-      // 2. Save employee AO data if applicable
-      if (aoData && aoData.id) {
-        await updateEmployeeAction(Number(aoData.id), {
-          role_in_company: aoData.role,
-          AO_Credentials_senior_most_employee: !!aoData.creds?.seniorMost,
-          AO_Credentials_company_director: !!aoData.creds?.director,
-          AO_Credentials_on_payroll: !!aoData.creds?.onPayroll,
-          AO_Credentials_holds_shared: !!aoData.creds?.holdsShares,
+      try {
+        // 1. Save record status
+        await updateHRValidationRecordAction(recordId, {
+          result_complete_sections: {
+            ...(await getSavedResults(recordId)),
+            ao_status: aoStatus,
+            ao_mode: mode,
+          }
         }, token);
-      }
-    }
 
-    router.push(`/employer/sections/contracts?recordId=${recordId}`);
+        // 2. Save employee AO data if applicable
+        if (aoData && aoData.id) {
+          await updateEmployeeAction(Number(aoData.id), {
+            role_in_company: aoData.role,
+            AO_Credentials_senior_most_employee: !!aoData.creds?.seniorMost,
+            AO_Credentials_company_director: !!aoData.creds?.director,
+            AO_Credentials_on_payroll: !!aoData.creds?.onPayroll,
+            AO_Credentials_holds_shared: !!aoData.creds?.holdsShares,
+          }, token);
+        }
+        router.push(`/employer/sections/contracts?recordId=${recordId}`);
+      } catch (err) {
+        console.error("Error completing AO assessment:", err);
+        setIsSubmitting(false);
+      }
+    } else {
+      router.push(`/employer/sections/contracts?recordId=${recordId}`);
+    }
   };
 
   async function getSavedResults(id: number) {
@@ -628,6 +653,7 @@ function AuthorisingOfficerImpl(): React.JSX.Element {
               }}
               onContinue={handleContinue}
               onChangeMode={() => { setMode(null); setAOStatus(null); setAoData(null); }}
+              isSubmitting={isSubmitting}
             />
             <AOCriteriaBox />
           </>

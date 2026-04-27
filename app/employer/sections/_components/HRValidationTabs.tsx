@@ -38,10 +38,11 @@ interface HRValidationTabsProps {
 
 // ─── Helper ──────────────────────────────────────────────────────────────────
 
-const getProgress = () => {
+const getProgress = (recordId: string | number | null) => {
   if (typeof window === "undefined") return {};
   try {
-    return JSON.parse(sessionStorage.getItem("hr_progress") || "{}");
+    const key = recordId ? `hr_progress_${recordId}` : "hr_progress";
+    return JSON.parse(sessionStorage.getItem(key) || "{}");
   } catch {
     return {};
   }
@@ -61,8 +62,8 @@ export default function HRValidationTabs({
 
   useEffect(() => {
     setMounted(true);
-    setTabProgress(getProgress());
-  }, []);
+    setTabProgress(getProgress(hrRecordId));
+  }, [hrRecordId]);
 
   const isTabUnlocked = (tabId: string): boolean => {
     // Basic indices

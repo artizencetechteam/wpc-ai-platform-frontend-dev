@@ -41,14 +41,15 @@ interface Transaction {
 
 interface FinancialData {
   balance?: number;
-  opening_balance?: number;
-  closing_balance?: number;
+  Opening_Balance?: number;
+  Closing_Balance?: number;
   incoming?: number;
   outgoing?: number;
   netCashFlow?: number;
   transactions?: Transaction[];
   paymentsReflected?: string | null;
   futureEngagement?: string | null;
+  bank_statement_url?: string | null;
 }
 
 interface SavedContract {
@@ -134,10 +135,11 @@ function TopNav({ onBack }: { onBack: () => void }) {
   return <HRValidationTabs currentTabId="financial" hrRecordId={recordId} onBack={onBack} />;
 }
 
-const markComplete = (key: string): void => {
+const markComplete = (recordId: number | null, key: string): void => {
+  if (!recordId) return;
   try {
-    const p = JSON.parse(sessionStorage.getItem("hr_progress") || "{}");
-    sessionStorage.setItem("hr_progress", JSON.stringify({ ...p, [key]: true }));
+    const p = JSON.parse(sessionStorage.getItem(`hr_progress_${recordId}`) || "{}");
+    sessionStorage.setItem(`hr_progress_${recordId}`, JSON.stringify({ ...p, [key]: true }));
   } catch { }
 };
 
@@ -312,7 +314,7 @@ function RadioRow({ value, selected, onChange, label, desc }: RadioRowProps): Re
 
 // ─── BalanceStep ──────────────────────────────────────────────────────────────
 
-function BalanceStep({ onNext, onSave, initialBalance }: BalanceStepProps): React.JSX.Element {
+function BalanceStep({ onNext, onSave, initialBalance, isSubmitting = false }: BalanceStepProps & { isSubmitting?: boolean }): React.JSX.Element {
   const [balance, setBalance] = useState<string>(initialBalance != null ? String(initialBalance) : "");
   const num = parseFloat(balance);
   const isCompliant = !isNaN(num) && num >= MIN_BALANCE;
@@ -355,8 +357,19 @@ function BalanceStep({ onNext, onSave, initialBalance }: BalanceStepProps): Reac
         </div>
       )}
 
-      <button onClick={handleNext} disabled={!balance} style={{ ...primaryBtn, width: "100%", opacity: balance ? 1 : 0.5, cursor: balance ? "pointer" : "not-allowed" }}>
-        Continue to Cash Flow Check
+      <button
+        onClick={handleNext}
+        disabled={!balance || isSubmitting}
+        style={{
+          ...primaryBtn, width: "100%",
+          backgroundColor: (balance && !isSubmitting) ? "#0852C9" : "#93ABDE",
+          opacity: balance ? 1 : 0.5,
+          cursor: (balance && !isSubmitting) ? "pointer" : "not-allowed",
+          display: "flex", alignItems: "center", justifyContent: "center", gap: "8px"
+        }}
+      >
+        {isSubmitting && <SpinnerIcon color="#fff" />}
+        {isSubmitting ? "Processing..." : "Continue to Cash Flow Check"}
       </button>
     </div>
   );
@@ -364,7 +377,7 @@ function BalanceStep({ onNext, onSave, initialBalance }: BalanceStepProps): Reac
 
 // ─── CashFlowStep ─────────────────────────────────────────────────────────────
 
-function CashFlowStep({ onNext, onPrev, onSave, initialIncoming, initialOutgoing }: CashFlowStepProps): React.JSX.Element {
+function CashFlowStep({ onNext, onPrev, onSave, initialIncoming, initialOutgoing, isSubmitting = false }: CashFlowStepProps & { isSubmitting?: boolean }): React.JSX.Element {
   const [incoming, setIncoming] = useState<string>(initialIncoming != null ? String(initialIncoming) : "");
   const [outgoing, setOutgoing] = useState<string>(initialOutgoing != null ? String(initialOutgoing) : "");
   const inNum = parseFloat(incoming) || 0;
@@ -414,8 +427,19 @@ function CashFlowStep({ onNext, onPrev, onSave, initialIncoming, initialOutgoing
         </div>
       )}
 
-      <button onClick={handleNext} disabled={!canContinue} style={{ ...primaryBtn, width: "100%", opacity: canContinue ? 1 : 0.5, cursor: canContinue ? "pointer" : "not-allowed" }}>
-        Continue to Investment Check
+      <button
+        onClick={handleNext}
+        disabled={!canContinue || isSubmitting}
+        style={{
+          ...primaryBtn, width: "100%",
+          backgroundColor: (canContinue && !isSubmitting) ? "#0852C9" : "#93ABDE",
+          opacity: canContinue ? 1 : 0.5,
+          cursor: (canContinue && !isSubmitting) ? "pointer" : "not-allowed",
+          display: "flex", alignItems: "center", justifyContent: "center", gap: "8px"
+        }}
+      >
+        {isSubmitting && <SpinnerIcon color="#fff" />}
+        {isSubmitting ? "Processing..." : "Continue to Investment Check"}
       </button>
     </div>
   );
@@ -423,7 +447,7 @@ function CashFlowStep({ onNext, onPrev, onSave, initialIncoming, initialOutgoing
 
 // ─── InvestmentsStep ──────────────────────────────────────────────────────────
 
-function InvestmentsStep({ onNext, onPrev, onSave, initialTransactions, initialOpening, initialClosing }: InvestmentsStepProps): React.JSX.Element {
+function InvestmentsStep({ onNext, onPrev, onSave, initialTransactions, initialOpening, initialClosing, isSubmitting = false }: InvestmentsStepProps & { isSubmitting?: boolean }): React.JSX.Element {
   const [amount, setAmount] = useState<string>("");
   const [reference, setReference] = useState<string>("");
   const [type, setType] = useState<"incoming" | "outgoing">("incoming");
@@ -509,17 +533,23 @@ function InvestmentsStep({ onNext, onPrev, onSave, initialTransactions, initialO
       // Auto-fill opening/closing balance from API response if not manually set
       const extractedOpening = extractionResult.opening_balance ?? extractionResult.openingBalance ?? null;
       const extractedClosing = extractionResult.closing_balance ?? extractionResult.closingBalance ?? null;
-      if (extractedOpening !== null && !manualOpening.trim()) {
+      if (extractedOpening !== null) {
         setManualOpening(String(extractedOpening));
       }
-      if (extractedClosing !== null && !manualClosing.trim()) {
+      if (extractedClosing !== null) {
         setManualClosing(String(extractedClosing));
+      }
+
+      // Capture S3 URL
+      const s3Url = extractionResult.file_url || extractionResult.s3_url || extractionResult.bank_statement_url || "";
+      if (s3Url) {
+        onSave({ bank_statement_url: s3Url });
       }
 
       if (mapped.length === 0) {
         toast.success("Parsed, but no transactions found in the statement.");
       } else {
-        setTransactions(prev => [...prev, ...mapped]);
+        setTransactions(mapped);
 
         const largeCount = mapped.filter(t => t.amount >= 2000).length;
         if (largeCount > 0) {
@@ -576,16 +606,16 @@ function InvestmentsStep({ onNext, onPrev, onSave, initialTransactions, initialO
   // Sync manual balances with parent state in real-time
   useEffect(() => {
     onSave({
-      opening_balance: parseFloat(manualOpening) || 0,
-      closing_balance: parseFloat(manualClosing) || 0
+      Opening_Balance: parseFloat(manualOpening) || 0,
+      Closing_Balance: parseFloat(manualClosing) || 0
     });
   }, [manualOpening, manualClosing]);
 
   const handleNext = (): void => {
     onSave({
       transactions,
-      opening_balance: parseFloat(manualOpening) || 0,
-      closing_balance: parseFloat(manualClosing) || 0
+      Opening_Balance: parseFloat(manualOpening) || 0,
+      Closing_Balance: parseFloat(manualClosing) || 0
     });
     onNext();
   };
@@ -854,8 +884,18 @@ function InvestmentsStep({ onNext, onPrev, onSave, initialTransactions, initialO
         </div>
       )}
 
-      <button onClick={handleNext} style={{ ...primaryBtn, width: "100%" }}>
-        Continue to Contract Payment Sync
+      <button
+        onClick={handleNext}
+        disabled={isSubmitting}
+        style={{
+          ...primaryBtn, width: "100%",
+          backgroundColor: isSubmitting ? "#93ABDE" : "#0852C9",
+          cursor: isSubmitting ? "not-allowed" : "pointer",
+          display: "flex", alignItems: "center", justifyContent: "center", gap: "8px"
+        }}
+      >
+        {isSubmitting && <SpinnerIcon color="#fff" />}
+        {isSubmitting ? "Processing..." : "Continue to Contract Payment Sync"}
       </button>
     </div>
   );
@@ -869,7 +909,7 @@ interface SyncStatus {
   desc?: string;
 }
 
-function ContractsSyncStep({ onComplete, onPrev, savedContracts, onSave, initialPaymentsReflected, initialFutureEngagement }: ContractsSyncStepProps): React.JSX.Element {
+function ContractsSyncStep({ onComplete, onPrev, savedContracts, onSave, initialPaymentsReflected, initialFutureEngagement, isSubmitting = false }: ContractsSyncStepProps & { isSubmitting?: boolean }): React.JSX.Element {
   const [paymentsReflected, setPaymentsReflected] = useState<string | null>(initialPaymentsReflected ?? null);
   const [futureEngagement, setFutureEngagement] = useState<string | null>(initialFutureEngagement ?? null);
 
@@ -938,8 +978,19 @@ function ContractsSyncStep({ onComplete, onPrev, savedContracts, onSave, initial
         </div>
       )}
 
-      <button onClick={onComplete} disabled={!canComplete} style={{ ...primaryBtn, width: "100%", marginTop: "16px", opacity: canComplete ? 1 : 0.5, cursor: canComplete ? "pointer" : "not-allowed" }}>
-        Complete Financial Viability Check
+      <button
+        onClick={onComplete}
+        disabled={!canComplete || isSubmitting}
+        style={{
+          ...primaryBtn, width: "100%", marginTop: "16px",
+          backgroundColor: (canComplete && !isSubmitting) ? "#0852C9" : "#93ABDE",
+          opacity: canComplete ? 1 : 0.5,
+          cursor: (canComplete && !isSubmitting) ? "pointer" : "not-allowed",
+          display: "flex", alignItems: "center", justifyContent: "center", gap: "8px"
+        }}
+      >
+        {isSubmitting && <SpinnerIcon color="#fff" />}
+        {isSubmitting ? "Completing..." : "Complete Financial Viability Check"}
       </button>
     </div>
   );
@@ -974,20 +1025,24 @@ function FinancialPageImpl(): React.JSX.Element {
     if (id) setRecordId(Number(id));
 
     try {
-      const c = sessionStorage.getItem("hr_contracts");
-      if (c) setSavedContracts(JSON.parse(c) as SavedContract[]);
+      if (id) {
+        const c = sessionStorage.getItem(`hr_contracts_${id}`);
+        if (c) setSavedContracts(JSON.parse(c) as SavedContract[]);
+      }
     } catch { }
 
     // Restore previously-saved financial data so it survives full-page navigation
     let localData: FinancialData = {};
     try {
-      const f = sessionStorage.getItem("hr_financial_data");
-      if (f) {
-        localData = JSON.parse(f) as FinancialData;
-        if (localData.closing_balance !== undefined && localData.balance === undefined) {
-          localData.balance = parseFloat(String(localData.closing_balance)) || undefined;
+      if (id) {
+        const f = sessionStorage.getItem(`hr_financial_data_${id}`);
+        if (f) {
+          localData = JSON.parse(f) as FinancialData;
+          if (localData.Closing_Balance !== undefined && localData.balance === undefined) {
+            localData.balance = parseFloat(String(localData.Closing_Balance)) || undefined;
+          }
+          setFinancialData(localData);
         }
-        setFinancialData(localData);
       }
     } catch { }
 
@@ -999,15 +1054,20 @@ function FinancialPageImpl(): React.JSX.Element {
       (async () => {
         try {
           const token = getClientToken();
-          
+
           // Fetch HR Validation Record to get transactions
           const hrRes = await listHRValidationRecordsAction(token);
           if (hrRes.success && hrRes.data) {
             const hrRecord = hrRes.data.find((r: any) => r.id === numId);
-            if (hrRecord && hrRecord.transactions) {
+            if (hrRecord) {
               setFinancialData(prev => ({
                 ...prev,
-                transactions: typeof hrRecord.transactions === 'string' ? JSON.parse(hrRecord.transactions) : hrRecord.transactions
+                transactions: hrRecord.transactions 
+                  ? (typeof hrRecord.transactions === 'string' ? JSON.parse(hrRecord.transactions) : hrRecord.transactions)
+                  : prev.transactions,
+                Opening_Balance: hrRecord.Opening_Balance ?? prev.Opening_Balance,
+                Closing_Balance: hrRecord.Closing_Balance ?? prev.Closing_Balance,
+                bank_statement_url: hrRecord.bank_statement_url ?? prev.bank_statement_url
               }));
             }
           }
@@ -1039,6 +1099,7 @@ function FinancialPageImpl(): React.JSX.Element {
   }, [searchParams]);
 
   const stepIds = ["balance", "cashflow", "investments", "contracts"];
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const goToStep = (id: string): void => setStep(id);
 
@@ -1055,45 +1116,57 @@ function FinancialPageImpl(): React.JSX.Element {
     setFinancialData((prev) => {
       const merged = { ...prev, ...data };
       try {
-        sessionStorage.setItem("hr_financial_data", JSON.stringify(merged));
+        if (recordId) {
+          sessionStorage.setItem(`hr_financial_data_${recordId}`, JSON.stringify(merged));
+        }
       } catch { }
       return merged;
     });
   };
 
   const handleComplete = async (): Promise<void> => {
-    markComplete("financial");
+    setIsSubmitting(true);
+    markComplete(recordId, "financial");
 
     if (recordId) {
       const token = getClientToken();
 
-      // Save global transactions in HR Validation Record
-      await updateHRValidationRecordAction(recordId, {
-        transactions: financialData.transactions,
-      }, token);
+      try {
+        // Save global transactions in HR Validation Record
+        await updateHRValidationRecordAction(recordId, {
+          transactions: financialData.transactions,
+          Opening_Balance: financialData.Opening_Balance,
+          Closing_Balance: financialData.Closing_Balance,
+          bank_statement_url: financialData.bank_statement_url,
+        }, token);
 
-      // Prepare payload for Financial Record
-      const payload = {
-        current_closing_balance_gbp: financialData.balance != null ? String(financialData.balance) : null,
-        total_incoming_gbp_credits: financialData.incoming != null ? String(financialData.incoming) : null,
-        total_outgoing_gbp_debits: financialData.outgoing != null ? String(financialData.outgoing) : null,
-        payments_reflected_in_bank: financialData.paymentsReflected === "yes" ? true : financialData.paymentsReflected === "no" ? false : null,
-        is_future_engagement: financialData.futureEngagement === "yes" ? true : financialData.futureEngagement === "no" ? false : null,
-        HRValidationRecord_id: recordId,
-      };
+        // Prepare payload for Financial Record
+        const payload = {
+          current_closing_balance_gbp: financialData.balance != null ? String(financialData.balance) : null,
+          total_incoming_gbp_credits: financialData.incoming != null ? String(financialData.incoming) : null,
+          total_outgoing_gbp_debits: financialData.outgoing != null ? String(financialData.outgoing) : null,
+          payments_reflected_in_bank: financialData.paymentsReflected === "yes" ? true : financialData.paymentsReflected === "no" ? false : null,
+          is_future_engagement: financialData.futureEngagement === "yes" ? true : financialData.futureEngagement === "no" ? false : null,
+          HRValidationRecord_id: recordId,
+        };
 
-      // Create or update Financial Record
-      if (financialRecordId) {
-        await updateFinancialRecordAction(financialRecordId, payload, token);
-      } else {
-        const res = await createFinancialRecordAction(payload, token);
-        if (res.success && res.data) {
-          setFinancialRecordId(res.data.id);
+        // Create or update Financial Record
+        if (financialRecordId) {
+          await updateFinancialRecordAction(financialRecordId, payload, token);
+        } else {
+          const res = await createFinancialRecordAction(payload, token);
+          if (res.success && res.data) {
+            setFinancialRecordId(res.data.id);
+          }
         }
+        router.push(`/employer/sections/summary?recordId=${recordId}`);
+      } catch (err) {
+        console.error("Error completing financial check:", err);
+        setIsSubmitting(false);
       }
+    } else {
+      router.push(`/employer/sections/summary?recordId=${recordId}`);
     }
-
-    router.push(`/employer/sections/summary?recordId=${recordId}`);
   };
 
   return (
@@ -1113,19 +1186,20 @@ function FinancialPageImpl(): React.JSX.Element {
             <SpinnerIcon />
           </div>
         )}
-        {hydrated && step === "balance" && <BalanceStep onNext={() => { handleNext("balance"); }} onSave={handleSave} initialBalance={financialData.balance} />}
-        {hydrated && step === "cashflow" && <CashFlowStep onNext={() => handleNext("cashflow")} onPrev={() => setStep("balance")} onSave={handleSave} initialIncoming={financialData.incoming} initialOutgoing={financialData.outgoing} />}
+        {hydrated && step === "balance" && <BalanceStep onNext={() => { handleNext("balance"); }} onSave={handleSave} initialBalance={financialData.balance} isSubmitting={isSubmitting} />}
+        {hydrated && step === "cashflow" && <CashFlowStep onNext={() => handleNext("cashflow")} onPrev={() => setStep("balance")} onSave={handleSave} initialIncoming={financialData.incoming} initialOutgoing={financialData.outgoing} isSubmitting={isSubmitting} />}
         {hydrated && step === "investments" && (
           <InvestmentsStep
             onNext={() => handleNext("investments")}
             onPrev={() => setStep("cashflow")}
             onSave={handleSave}
             initialTransactions={financialData.transactions}
-            initialOpening={financialData.opening_balance}
-            initialClosing={financialData.closing_balance}
+            initialOpening={financialData.Opening_Balance}
+            initialClosing={financialData.Closing_Balance}
+            isSubmitting={isSubmitting}
           />
         )}
-        {hydrated && step === "contracts" && <ContractsSyncStep onComplete={handleComplete} onPrev={() => setStep("investments")} savedContracts={savedContracts} onSave={handleSave} initialPaymentsReflected={financialData.paymentsReflected} initialFutureEngagement={financialData.futureEngagement} />}
+        {hydrated && step === "contracts" && <ContractsSyncStep onComplete={handleComplete} onPrev={() => setStep("investments")} savedContracts={savedContracts} onSave={handleSave} initialPaymentsReflected={financialData.paymentsReflected} initialFutureEngagement={financialData.futureEngagement} isSubmitting={isSubmitting} />}
 
         <div style={{ marginTop: "20px" }}>
           {step === "balance" ? (

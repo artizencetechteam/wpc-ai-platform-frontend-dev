@@ -8,6 +8,7 @@ import {
   createHRValidationRecordAction,
   listHRValidationRecordsAction,
   updateHRValidationRecordAction,
+  listFinancialRecordsAction,
 } from "@/app/employer/sections/action/action";
 import HRValidationTabs from "../_components/HRValidationTabs";
 
@@ -108,6 +109,7 @@ function CompanyPageImpl() {
   const [searchReference, setSearchReference] = useState("");
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editValues, setEditValues] = useState<any | null>(null);
+  const [bankStatementUrl, setBankStatementUrl] = useState("");
 
   const handleDelete = (id: number): void => {
     setTransactions(prev => prev.filter(t => t.id !== id));
@@ -140,19 +142,23 @@ function CompanyPageImpl() {
   };
 
   const syncTransactionsToStorage = (txs: any[]) => {
+    if (!hrRecordId) return;
     try {
-      const prevStr = sessionStorage.getItem("hr_financial_data");
+      const prevStr = sessionStorage.getItem(`hr_financial_data_${hrRecordId}`);
       const prev = prevStr ? JSON.parse(prevStr) : {};
       prev.transactions = txs;
-      sessionStorage.setItem("hr_financial_data", JSON.stringify(prev));
+      sessionStorage.setItem(`hr_financial_data_${hrRecordId}`, JSON.stringify(prev));
     } catch { }
   };
 
   useEffect(() => {
     initHRRecord();
-    const p = sessionStorage.getItem("hr_progress");
-    if (p) {
-      try { setTabProgress(JSON.parse(p)); } catch { setTabProgress({}); }
+    const queryId = searchParams.get("recordId") || searchParams.get("id");
+    if (queryId) {
+      const p = sessionStorage.getItem(`hr_progress_${queryId}`);
+      if (p) {
+        try { setTabProgress(JSON.parse(p)); } catch { setTabProgress({}); }
+      }
     }
   }, [searchParams]);
 
@@ -208,11 +214,17 @@ function CompanyPageImpl() {
       // Auto-fill opening/closing balance from API response if not manually set
       const extractedOpening = extractionResult.opening_balance ?? extractionResult.openingBalance ?? null;
       const extractedClosing = extractionResult.closing_balance ?? extractionResult.closingBalance ?? null;
-      if (extractedOpening !== null && !manualOpening.trim()) {
+      if (extractedOpening !== null) {
         setManualOpening(String(extractedOpening));
       }
-      if (extractedClosing !== null && !manualClosing.trim()) {
+      if (extractedClosing !== null) {
         setManualClosing(String(extractedClosing));
+      }
+
+      // Capture S3 URL from response
+      const s3Url = extractionResult.file_url || extractionResult.s3_url || extractionResult.bank_statement_url || "";
+      if (s3Url) {
+        setBankStatementUrl(s3Url);
       }
 
       if (mapped.length === 0) {
@@ -221,14 +233,6 @@ function CompanyPageImpl() {
         setUploadedFileName(file.name);
         setTransactions(mapped);
         toast.success(`Successfully parsed ${mapped.length} transactions.`);
-        try {
-          const prevStr = sessionStorage.getItem("hr_financial_data");
-          const prev = prevStr ? JSON.parse(prevStr) : {};
-          prev.transactions = mapped;
-          prev.opening_balance = extractedOpening !== null && !manualOpening.trim() ? String(extractedOpening) : (manualOpening.trim() || "0");
-          prev.closing_balance = extractedClosing !== null && !manualClosing.trim() ? String(extractedClosing) : (manualClosing.trim() || "0");
-          sessionStorage.setItem("hr_financial_data", JSON.stringify(prev));
-        } catch { }
       }
     } catch (error: any) {
       console.error("Upload error:", error);
@@ -332,6 +336,9 @@ function CompanyPageImpl() {
             setBankName(srvBank);
             sessionStorage.setItem(`bank_name_${recordId}`, srvBank);
           }
+          if (record.bank_statement_url) {
+            setBankStatementUrl(record.bank_statement_url);
+          }
         }
 
         // Fallback: Retrieve from storage if server didn't have it
@@ -341,14 +348,35 @@ function CompanyPageImpl() {
         const savedBank = sessionStorage.getItem(`bank_name_${recordId}`);
         if (savedBank && !srvBank) setBankName(savedBank);
 
+        // --- NEW: Hydrate Transactions and Balances from server ---
+        if (record) {
+          if (record.transactions) {
+            const txs = typeof record.transactions === "string" ? JSON.parse(record.transactions) : record.transactions;
+            setTransactions(txs);
+          }
+          if (record.Opening_Balance) setManualOpening(String(record.Opening_Balance));
+          if (record.Closing_Balance) setManualClosing(String(record.Closing_Balance));
+        }
+
+        // Fetch Financial Record for balances
+        const finRes = await listFinancialRecordsAction(token);
+        if (finRes.success && finRes.data) {
+          const finRecord = finRes.data.find((fr) => fr.HRValidationRecord_id === recordId);
+          if (finRecord) {
+            if (finRecord.current_closing_balance_gbp) {
+              setManualClosing(String(finRecord.current_closing_balance_gbp));
+            }
+          }
+        }
+
         // Restore manual balances and transactions from shared financial data
-        const finDataStr = sessionStorage.getItem("hr_financial_data");
+        const finDataStr = sessionStorage.getItem(`hr_financial_data_${recordId}`);
         if (finDataStr) {
           try {
             const finData = JSON.parse(finDataStr);
             if (finData.transactions) setTransactions(finData.transactions);
-            if (finData.opening_balance) setManualOpening(String(finData.opening_balance));
-            if (finData.closing_balance) setManualClosing(String(finData.closing_balance));
+            if (finData.Opening_Balance) setManualOpening(String(finData.Opening_Balance));
+            if (finData.Closing_Balance) setManualClosing(String(finData.Closing_Balance));
           } catch { /* ignore */ }
         }
       }
@@ -362,30 +390,34 @@ function CompanyPageImpl() {
 
   // Persist manual balance changes in real-time
   useEffect(() => {
-    if (loading) return;
+    if (loading || !hrRecordId) return;
     try {
-      const prevStr = sessionStorage.getItem("hr_financial_data");
+      const prevStr = sessionStorage.getItem(`hr_financial_data_${hrRecordId}`);
       const prev = prevStr ? JSON.parse(prevStr) : {};
-      prev.opening_balance = manualOpening;
-      prev.closing_balance = manualClosing;
-      sessionStorage.setItem("hr_financial_data", JSON.stringify(prev));
+      prev.Opening_Balance = manualOpening;
+      prev.Closing_Balance = manualClosing;
+      sessionStorage.setItem(`hr_financial_data_${hrRecordId}`, JSON.stringify(prev));
     } catch { }
-  }, [manualOpening, manualClosing, loading]);
+  }, [manualOpening, manualClosing, loading, hrRecordId]);
+
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleContinue = async () => {
     if (!companyName.trim() || !bankName) return;
+    setIsSubmitting(true);
     if (hrRecordId) {
       sessionStorage.setItem(`company_name_${hrRecordId}`, companyName.trim());
       sessionStorage.setItem(`bank_name_${hrRecordId}`, bankName);
 
       // Final sync of financial data before moving to next page
       try {
-        const prevStr = sessionStorage.getItem("hr_financial_data");
+        const prevStr = sessionStorage.getItem(`hr_financial_data_${hrRecordId}`);
         const prev = prevStr ? JSON.parse(prevStr) : {};
-        prev.opening_balance = manualOpening;
-        prev.closing_balance = manualClosing;
+        prev.Opening_Balance = manualOpening;
+        prev.Closing_Balance = manualClosing;
         prev.transactions = transactions;
-        sessionStorage.setItem("hr_financial_data", JSON.stringify(prev));
+        prev.bank_statement_url = bankStatementUrl;
+        sessionStorage.setItem(`hr_financial_data_${hrRecordId}`, JSON.stringify(prev));
       } catch { }
 
       // Save to server
@@ -394,11 +426,16 @@ function CompanyPageImpl() {
         company_name: companyName.trim(),
         bank_name: bankName,
         transactions: transactions,
+        Opening_Balance: manualOpening,
+        Closing_Balance: manualClosing,
+        bank_statement_url: bankStatementUrl,
       }, token);
 
       // Mark company step as complete in progress map
-      const p = { ...tabProgress, company: true };
-      sessionStorage.setItem("hr_progress", JSON.stringify(p));
+      const pStr = sessionStorage.getItem(`hr_progress_${hrRecordId}`);
+      const p = pStr ? JSON.parse(pStr) : {};
+      p.company = true;
+      sessionStorage.setItem(`hr_progress_${hrRecordId}`, JSON.stringify(p));
       router.push(`/employer/sections/hr-validation?recordId=${hrRecordId}`);
     }
   };
@@ -691,15 +728,17 @@ function CompanyPageImpl() {
 
             <button
               onClick={handleContinue}
-              disabled={!companyName.trim() || !bankName}
+              disabled={isSubmitting || !companyName.trim() || !bankName}
               style={{
                 width: "100%", padding: "14px", borderRadius: "10px", border: "none",
-                backgroundColor: companyName.trim() && bankName ? "#0852C9" : "#93ABDE", color: "white",
-                fontSize: "15px", fontWeight: "600", cursor: companyName.trim() && bankName ? "pointer" : "not-allowed",
+                backgroundColor: (isSubmitting || !companyName.trim() || !bankName) ? "#93ABDE" : "#0852C9", color: "white",
+                fontSize: "15px", fontWeight: "600", cursor: (isSubmitting || !companyName.trim() || !bankName) ? "not-allowed" : "pointer",
                 transition: "background-color 0.2s",
+                display: "flex", alignItems: "center", justifyContent: "center", gap: "8px"
               }}
             >
-              Continue to Staff List
+              {isSubmitting && <SpinnerIcon color="#fff" />}
+              {isSubmitting ? "Processing..." : "Continue to Staff List"}
             </button>
           </div>
         )}

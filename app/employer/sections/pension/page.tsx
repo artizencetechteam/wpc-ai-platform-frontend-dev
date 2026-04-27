@@ -49,14 +49,18 @@ const SpinnerIcon = ({ color = "#0852C9" }: { color?: string }) => (
 
 
 
-const getProgress = () => {
-  try { return JSON.parse(sessionStorage.getItem("hr_progress") || "{}"); } catch { return {}; }
+const getProgress = (recordId: string | number | null) => {
+  try {
+    const key = recordId ? `hr_progress_${recordId}` : "hr_progress";
+    return JSON.parse(sessionStorage.getItem(key) || "{}");
+  } catch { return {}; }
 };
 
-const markComplete = (key: string) => {
+const markComplete = (recordId: string | number | null, key: string) => {
   try {
-    const p = getProgress();
-    sessionStorage.setItem("hr_progress", JSON.stringify({ ...p, [key]: true }));
+    const p = getProgress(recordId);
+    const storageKey = recordId ? `hr_progress_${recordId}` : "hr_progress";
+    sessionStorage.setItem(storageKey, JSON.stringify({ ...p, [key]: true }));
   } catch {}
 };
 
@@ -115,12 +119,14 @@ type CompanyRegistrationStepProps = {
   value: string | null;
   onChange: (value: string) => void;
   onContinue: () => void;
+  isSubmitting?: boolean;
 };
 
 function CompanyRegistrationStep({
   value,
   onChange,
   onContinue,
+  isSubmitting = false,
 }: CompanyRegistrationStepProps) {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [fileName, setFileName] = useState<string | null>(null);
@@ -231,13 +237,16 @@ function CompanyRegistrationStep({
       {value && (
         <button
           onClick={onContinue}
+          disabled={isSubmitting}
           style={{
-            width: "100%", padding: "14px", backgroundColor: "#0852C9",
+            width: "100%", padding: "14px", backgroundColor: isSubmitting ? "#93ABDE" : "#0852C9",
             color: "white", border: "none", borderRadius: "8px",
-            fontSize: "14px", fontWeight: "600", cursor: "pointer",
+            fontSize: "14px", fontWeight: "600", cursor: isSubmitting ? "not-allowed" : "pointer",
+            display: "flex", alignItems: "center", justifyContent: "center", gap: "8px"
           }}
         >
-          {isNo ? "Save & Pause Validation" : "Continue to Employee Checks"}
+          {isSubmitting && <SpinnerIcon color="#fff" />}
+          {isSubmitting ? "Processing..." : (isNo ? "Save & Pause Validation" : "Continue to Employee Checks")}
         </button>
       )}
     </div>
@@ -256,6 +265,7 @@ type EmployeeEligibilityStepProps = {
   checks: Record<number, any>;
   onChecksChange: (checks: Record<number, any>) => void;
   onComplete: () => void;
+  isSubmitting?: boolean;
 };
 
 function EmployeeEligibilityStep({
@@ -263,6 +273,7 @@ function EmployeeEligibilityStep({
   checks,
   onChecksChange,
   onComplete,
+  isSubmitting = false,
 }: EmployeeEligibilityStepProps) {
 
  const toggle = (empId: number, field: string) => {
@@ -368,13 +379,16 @@ function EmployeeEligibilityStep({
       
       <button
         onClick={onComplete}
+        disabled={isSubmitting}
         style={{
-          width: "100%", padding: "14px", backgroundColor: "#0852C9",
+          width: "100%", padding: "14px", backgroundColor: isSubmitting ? "#93ABDE" : "#0852C9",
           color: "white", border: "none", borderRadius: "8px",
-          fontSize: "14px", fontWeight: "600", cursor: "pointer",
+          fontSize: "14px", fontWeight: "600", cursor: isSubmitting ? "not-allowed" : "pointer",
+          display: "flex", alignItems: "center", justifyContent: "center", gap: "8px"
         }}
       >
-        Complete Pension Validation
+        {isSubmitting && <SpinnerIcon color="#fff" />}
+        {isSubmitting ? "Processing..." : "Complete Pension Validation"}
       </button>
     </div>
   );
@@ -398,6 +412,7 @@ function PensionComplianceImpl() {
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [recordId, setRecordId] = useState<number | null>(null);
   const [eligibilityChecks, setEligibilityChecks] = useState<Record<number, any>>({});
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Resolve recordId and restore saved pension state on mount
   useEffect(() => {
@@ -413,8 +428,10 @@ function PensionComplianceImpl() {
     if (saved.eligibilityChecks) setEligibilityChecks(saved.eligibilityChecks);
 
     try {
-      const savedEmps = sessionStorage.getItem("hr_employees");
-      if (savedEmps) setEmployees(JSON.parse(savedEmps));
+      if (resolvedId) {
+        const savedEmps = sessionStorage.getItem(`hr_employees_${resolvedId}`);
+        if (savedEmps) setEmployees(JSON.parse(savedEmps));
+      }
     } catch {}
 
     if (resolvedId) {
@@ -497,47 +514,67 @@ function PensionComplianceImpl() {
     if (tabId === "pension") return;
   };
 
-  const handleCompanyContinue = () => {
+  const handleCompanyContinue = async () => {
     if (companyRegistered === "yes") {
       setStep("eligibility");
     } else {
+      setIsSubmitting(true);
       router.push(`/employer/sections/hr-validation?recordId=${recordId}`);
     }
   };
 
   const handleComplete = async () => {
-    markComplete("pension");
+    setIsSubmitting(true);
+    markComplete(recordId, "pension");
 
     if (recordId) {
       const token = getClientToken();
 
-      // 1. Save general record data
-      await updateHRValidationRecordAction(recordId, {
-        pension_section_comments: companyRegistered === "no" ? "Company is not registered with a pension scheme." : null,
-        result_complete_sections: {
-          ...(await getSavedResults(recordId)),
-          pension: {
-            companyRegistered,
-            eligibilityChecks,
-          }
-        }
-      }, token);
-
-      // 2. Save per-employee pension data
-      for (const emp of employees) {
-        const c = eligibilityChecks[emp.id] || {};
+      try {
+        // 1. Fetch current record to preserve comments
+        const record = await getHRRecord(recordId);
+        const existingComment = record?.pension_section_comments;
+        const autoMsg = "Company is not registered with a pension scheme.";
         
-        await updateEmployeeAction(emp.id, {
-          min_22_year_age: !!c.age22,
-          earning_gbp_10k_above: !!c.earnings10k,
-          opted_out: !!c.optedOut,
-          pension_status: c.autoEnrolled ? "enrolled" : "not_enrolled",
-          auto_enrollment_date: c.autoEnrolled ? new Date().toISOString().split('T')[0] : null,
-        }, token);
-      }
-    }
+        let newComment = existingComment;
+        if (companyRegistered === "no") {
+          newComment = autoMsg;
+        } else if (existingComment === autoMsg) {
+          newComment = null;
+        }
 
-    router.push(`/employer/sections/authorising-officer?recordId=${recordId}`);
+        // 2. Save general record data
+        await updateHRValidationRecordAction(recordId, {
+          pension_section_comments: newComment,
+          result_complete_sections: {
+            ...(record?.result_complete_sections || {}),
+            pension: {
+              companyRegistered,
+              eligibilityChecks,
+            }
+          }
+        }, token);
+
+        // 2. Save per-employee pension data
+        for (const emp of employees) {
+          const c = eligibilityChecks[emp.id] || {};
+          
+          await updateEmployeeAction(emp.id, {
+            min_22_year_age: !!c.age22,
+            earning_gbp_10k_above: !!c.earnings10k,
+            opted_out: !!c.optedOut,
+            pension_status: c.autoEnrolled ? "enrolled" : "not_enrolled",
+            auto_enrollment_date: c.autoEnrolled ? new Date().toISOString().split('T')[0] : null,
+          }, token);
+        }
+        router.push(`/employer/sections/authorising-officer?recordId=${recordId}`);
+      } catch (err) {
+        console.error("Error completing pension validation:", err);
+        setIsSubmitting(false);
+      }
+    } else {
+      router.push(`/employer/sections/authorising-officer?recordId=${recordId}`);
+    }
   };
 
   const getStatusLabel = (c: any) => {
@@ -548,16 +585,15 @@ function PensionComplianceImpl() {
     return "Non-Compliant";
   };
 
-  async function getSavedResults(id: number) {
+  async function getHRRecord(id: number) {
      try {
        const token = getClientToken();
        const res = await listHRValidationRecordsAction(token);
        if (res.success && res.data) {
-         const record = res.data.find(r => r.id === id);
-         return record?.result_complete_sections || {};
+         return res.data.find(r => r.id === id);
        }
-       return {};
-     } catch { return {}; }
+       return null;
+     } catch { return null; }
   }
 
   const handleBack = () => router.back();
@@ -592,6 +628,7 @@ function PensionComplianceImpl() {
             value={companyRegistered}
             onChange={setCompanyRegistered}
             onContinue={handleCompanyContinue}
+            isSubmitting={isSubmitting}
           />
         ) : (
           <EmployeeEligibilityStep
@@ -599,6 +636,7 @@ function PensionComplianceImpl() {
             checks={eligibilityChecks}
             onChecksChange={setEligibilityChecks}
             onComplete={handleComplete}
+            isSubmitting={isSubmitting}
           />
         )}
 

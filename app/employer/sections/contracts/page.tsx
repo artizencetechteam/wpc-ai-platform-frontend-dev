@@ -47,14 +47,18 @@ interface AddContractFormProps {
 
 // ─── Session helpers ──────────────────────────────────────────────────────────
 
-const getProgress = (): Progress => {
-  try { return JSON.parse(sessionStorage.getItem("hr_progress") || "{}"); } catch { return {}; }
+const getProgress = (recordId: string | number | null): Progress => {
+  try {
+    const key = recordId ? `hr_progress_${recordId}` : "hr_progress";
+    return JSON.parse(sessionStorage.getItem(key) || "{}");
+  } catch { return {}; }
 };
 
-const markComplete = (key: string): void => {
+const markComplete = (recordId: string | number | null, key: string): void => {
   try {
-    const p = getProgress();
-    sessionStorage.setItem("hr_progress", JSON.stringify({ ...p, [key]: true }));
+    const p = getProgress(recordId);
+    const storageKey = recordId ? `hr_progress_${recordId}` : "hr_progress";
+    sessionStorage.setItem(storageKey, JSON.stringify({ ...p, [key]: true }));
   } catch {}
 };
 
@@ -266,6 +270,7 @@ function ContractsPageImpl(): React.JSX.Element {
   const [showForm, setShowForm] = useState<boolean>(false);
   const [recordId, setRecordId] = useState<number | null>(null);
   const [businessNature, setBusinessNature] = useState<string>("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
     const queryId = searchParams.get("recordId") || searchParams.get("id");
@@ -289,21 +294,28 @@ function ContractsPageImpl(): React.JSX.Element {
   };
 
   const handleContinue = async (): Promise<void> => {
-    markComplete("contracts");
+    setIsSubmitting(true);
+    markComplete(recordId, "contracts");
 
     if (recordId) {
       const token = getClientToken();
-      await updateHRValidationRecordAction(recordId, {
-        result_complete_sections: {
-          ...(await getSavedResults(recordId)),
-          business_nature: businessNature,
-          contracts_count: contracts.length,
-          contracts: contracts,
-        }
-      }, token);
+      try {
+        await updateHRValidationRecordAction(recordId, {
+          result_complete_sections: {
+            ...(await getSavedResults(recordId)),
+            business_nature: businessNature,
+            contracts_count: contracts.length,
+            contracts: contracts,
+          }
+        }, token);
+        router.push(`/employer/sections/financial?recordId=${recordId}`);
+      } catch (err) {
+        console.error("Error completing contracts validation:", err);
+        setIsSubmitting(false);
+      }
+    } else {
+      router.push(`/employer/sections/financial?recordId=${recordId}`);
     }
-
-    router.push(`/employer/sections/financial?recordId=${recordId}`);
   };
 
   async function getSavedResults(id: number) {
@@ -450,16 +462,19 @@ function ContractsPageImpl(): React.JSX.Element {
 
         {/* Continue */}
         <button
-          onClick={canContinue ? handleContinue : undefined}
+          onClick={canContinue && !isSubmitting ? handleContinue : undefined}
+          disabled={!canContinue || isSubmitting}
           style={{
-            width: "100%", padding: "14px", backgroundColor: "#0852C9",
+            width: "100%", padding: "14px", backgroundColor: (canContinue && !isSubmitting) ? "#0852C9" : "#93ABDE",
             color: "white", border: "none", borderRadius: "8px",
             fontSize: "14px", fontWeight: "600",
-            cursor: canContinue ? "pointer" : "not-allowed",
+            cursor: (canContinue && !isSubmitting) ? "pointer" : "not-allowed",
             opacity: canContinue ? 1 : 0.5, marginBottom: "16px",
+            display: "flex", alignItems: "center", justifyContent: "center", gap: "8px"
           }}
         >
-          Continue to Financial Viability Check
+          {isSubmitting && <SpinnerIcon color="#fff" />}
+          {isSubmitting ? "Processing..." : "Continue to Financial Viability Check"}
         </button>
 
         {/* Back */}
