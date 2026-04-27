@@ -172,15 +172,7 @@ function SummaryPageImpl(): React.JSX.Element {
         if (savedName) setCompanyName(savedName);
       }
 
-      if (id) {
-        // Financial data
-        const f = sessionStorage.getItem(`hr_financial_data_${id}`);
-        if (f) setFinancialData(JSON.parse(f));
-
-        // Contracts
-        const c = sessionStorage.getItem(`hr_contracts_${id}`);
-        if (c) setContracts(JSON.parse(c));
-      }
+        // Financial data and contracts are now hydrated solely from the fetchRecord API call below
 
       // Pension data
       if (id) {
@@ -356,8 +348,6 @@ function SummaryPageImpl(): React.JSX.Element {
       if (recordId) {
         sessionStorage.removeItem(`hr_employees_${recordId}`);
         sessionStorage.removeItem(`hr_progress_${recordId}`);
-        sessionStorage.removeItem(`hr_financial_data_${recordId}`);
-        sessionStorage.removeItem(`hr_contracts_${recordId}`);
         sessionStorage.removeItem(`company_name_${recordId}`);
         sessionStorage.removeItem(`bank_name_${recordId}`);
         sessionStorage.removeItem(`pension_data_${recordId}`);
