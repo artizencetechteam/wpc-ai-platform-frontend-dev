@@ -471,14 +471,18 @@ function InvestmentsStep({ onNext, onPrev, onSave, initialTransactions, initialO
     const file = e.target.files?.[0];
     if (!file) return;
 
+    // Reset balances to null/empty so extracted data from PDF is used
+    setManualOpening("");
+    setManualClosing("");
+
     const hrRecordId = sessionStorage.getItem("current_hr_record_id");
     const storedBankName = hrRecordId ? sessionStorage.getItem(`bank_name_${hrRecordId}`) : null;
 
     const formData = new FormData();
     formData.append("file", file);
     formData.append("bank_name", storedBankName || "Generic (AI Vision)");
-    formData.append("manual_opening", manualOpening.trim() || "");
-    formData.append("manual_closing", manualClosing.trim() || "");
+    formData.append("manual_opening", "");
+    formData.append("manual_closing", "");
     formData.append("employee_name", "string");
 
     setIsParsing(true);
@@ -1024,27 +1028,7 @@ function FinancialPageImpl(): React.JSX.Element {
     const id = queryId || sessionStorage.getItem("current_hr_record_id");
     if (id) setRecordId(Number(id));
 
-    try {
-      if (id) {
-        const c = sessionStorage.getItem(`hr_contracts_${id}`);
-        if (c) setSavedContracts(JSON.parse(c) as SavedContract[]);
-      }
-    } catch { }
-
-    // Restore previously-saved financial data so it survives full-page navigation
-    let localData: FinancialData = {};
-    try {
-      if (id) {
-        const f = sessionStorage.getItem(`hr_financial_data_${id}`);
-        if (f) {
-          localData = JSON.parse(f) as FinancialData;
-          if (localData.Closing_Balance !== undefined && localData.balance === undefined) {
-            localData.balance = parseFloat(String(localData.Closing_Balance)) || undefined;
-          }
-          setFinancialData(localData);
-        }
-      }
-    } catch { }
+    // Hydration now relies solely on API fetching in the useEffect below
 
     if (id) {
       const numId = Number(id);
@@ -1115,11 +1099,6 @@ function FinancialPageImpl(): React.JSX.Element {
   const handleSave = (data: Partial<FinancialData>): void => {
     setFinancialData((prev) => {
       const merged = { ...prev, ...data };
-      try {
-        if (recordId) {
-          sessionStorage.setItem(`hr_financial_data_${recordId}`, JSON.stringify(merged));
-        }
-      } catch { }
       return merged;
     });
   };

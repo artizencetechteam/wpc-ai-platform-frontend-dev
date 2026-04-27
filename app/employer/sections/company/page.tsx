@@ -114,7 +114,6 @@ function CompanyPageImpl() {
   const handleDelete = (id: number): void => {
     setTransactions(prev => prev.filter(t => t.id !== id));
     toast.success("Transaction deleted");
-    syncTransactionsToStorage(transactions.filter(t => t.id !== id));
   };
 
   const handleEditStart = (t: any): void => {
@@ -133,7 +132,6 @@ function CompanyPageImpl() {
     setEditingId(null);
     setEditValues(null);
     toast.success("Transaction updated");
-    syncTransactionsToStorage(updated);
   };
 
   const handleEditCancel = (): void => {
@@ -141,15 +139,6 @@ function CompanyPageImpl() {
     setEditValues(null);
   };
 
-  const syncTransactionsToStorage = (txs: any[]) => {
-    if (!hrRecordId) return;
-    try {
-      const prevStr = sessionStorage.getItem(`hr_financial_data_${hrRecordId}`);
-      const prev = prevStr ? JSON.parse(prevStr) : {};
-      prev.transactions = txs;
-      sessionStorage.setItem(`hr_financial_data_${hrRecordId}`, JSON.stringify(prev));
-    } catch { }
-  };
 
   useEffect(() => {
     initHRRecord();
@@ -166,11 +155,15 @@ function CompanyPageImpl() {
     const file = e.target.files?.[0];
     if (!file) return;
 
+    // Reset balances to null/empty so extracted data from PDF is used
+    setManualOpening("");
+    setManualClosing("");
+
     const formData = new FormData();
     formData.append("file", file);
     formData.append("bank_name", bankName);
-    formData.append("manual_opening", manualOpening.trim() || "");
-    formData.append("manual_closing", manualClosing.trim() || "");
+    formData.append("manual_opening", "");
+    formData.append("manual_closing", "");
     formData.append("employee_name", "string");
 
     setIsParsing(true);
@@ -369,16 +362,7 @@ function CompanyPageImpl() {
           }
         }
 
-        // Restore manual balances and transactions from shared financial data
-        const finDataStr = sessionStorage.getItem(`hr_financial_data_${recordId}`);
-        if (finDataStr) {
-          try {
-            const finData = JSON.parse(finDataStr);
-            if (finData.transactions) setTransactions(finData.transactions);
-            if (finData.Opening_Balance) setManualOpening(String(finData.Opening_Balance));
-            if (finData.Closing_Balance) setManualClosing(String(finData.Closing_Balance));
-          } catch { /* ignore */ }
-        }
+        // Manual balances and transactions are now hydrated solely from the server/API logic above
       }
     } catch (e) {
       console.error("initHRRecord error:", e);
@@ -388,17 +372,7 @@ function CompanyPageImpl() {
     }
   }
 
-  // Persist manual balance changes in real-time
-  useEffect(() => {
-    if (loading || !hrRecordId) return;
-    try {
-      const prevStr = sessionStorage.getItem(`hr_financial_data_${hrRecordId}`);
-      const prev = prevStr ? JSON.parse(prevStr) : {};
-      prev.Opening_Balance = manualOpening;
-      prev.Closing_Balance = manualClosing;
-      sessionStorage.setItem(`hr_financial_data_${hrRecordId}`, JSON.stringify(prev));
-    } catch { }
-  }, [manualOpening, manualClosing, loading, hrRecordId]);
+  // Real-time persistence now relies on the handleContinue save or local state
 
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -409,16 +383,7 @@ function CompanyPageImpl() {
       sessionStorage.setItem(`company_name_${hrRecordId}`, companyName.trim());
       sessionStorage.setItem(`bank_name_${hrRecordId}`, bankName);
 
-      // Final sync of financial data before moving to next page
-      try {
-        const prevStr = sessionStorage.getItem(`hr_financial_data_${hrRecordId}`);
-        const prev = prevStr ? JSON.parse(prevStr) : {};
-        prev.Opening_Balance = manualOpening;
-        prev.Closing_Balance = manualClosing;
-        prev.transactions = transactions;
-        prev.bank_statement_url = bankStatementUrl;
-        sessionStorage.setItem(`hr_financial_data_${hrRecordId}`, JSON.stringify(prev));
-      } catch { }
+      // Final sync of data is handled by the server update below
 
       // Save to server
       const token = getClientToken();
