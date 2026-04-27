@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   LayoutDashboard,
   Users,
@@ -20,11 +20,22 @@ import {
 const Sidebar = () => {
   const pathname = usePathname();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [timestamp, setTimestamp] = useState<number | null>(null);
+
+  useEffect(() => {
+    setTimestamp(Date.now());
+  }, []);
 
   const routes = [
     { id: 1, name: 'Dashboard', route: '/employer/dashboard', icon: LayoutDashboard },
+    { 
+      id: 2, 
+      name: 'HR Validation', 
+      route: '/employer/sections/company', 
+      icon: Users,
+      href: `/employer/sections/company?action=new${timestamp ? `&t=${timestamp}` : ''}`
+    },
     { id: 3, name: 'Post Compliance', route: '/employer/dashboard/post-compliance', icon: Briefcase },
-    { id: 2, name: 'HR Validation', route: '/employer/sections/hr-validation', icon: Users },
     { id: 4, name: 'Call Agents', route: '/employer/dashboard/call-agents', icon: CalendarCheck },
     { id: 5, name: 'Staff List', route: '/employer/dashboard/staff-list', icon: CalendarCheck },
     { id: 6, name: 'Records', route: '/employer/dashboard/records', icon: User2 },
@@ -74,7 +85,7 @@ const Sidebar = () => {
             return (
               <Link
                 key={item.id}
-                href={item.route}
+                href={(item as any).href || item.route}
                 onClick={closeMobileMenu}
                 className={`flex items-center gap-3 px-3.25 py-3.5 rounded-[7px] transition text-[16px] font-medium text-[#FFFFFF]
                   ${

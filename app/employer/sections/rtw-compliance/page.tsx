@@ -131,7 +131,10 @@ function RTWVerificationScreen({ migrants, onBackToStaffList, onContinue, onSave
         if (!val) return "";
         const d = new Date(val);
         if (isNaN(d.getTime())) return val;
-        return d.toISOString().split('T')[0];
+        const year = d.getFullYear();
+        const month = String(d.getMonth() + 1).padStart(2, "0");
+        const day = String(d.getDate()).padStart(2, "0");
+        return `${year}-${month}-${day}`;
       };
       setCheckDate(toISODate(extractedData?.check_date || employee.check_date));
       const rawCompany = extractedData?.company_name || employee.company_name || "";

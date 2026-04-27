@@ -163,6 +163,9 @@ export type AddEmployeePayload = {
   nationality: string;
   HRValidationRecord_id: number;
   rtw_document_url?: string;
+  check_date?: string | null;
+  company_name?: string | null;
+  passport_number?: string | null;
 };
 
 type AR<T = null> = { success: boolean; message: string; data?: T };

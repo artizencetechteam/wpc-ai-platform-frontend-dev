@@ -28,6 +28,8 @@ type RTWForm = {
   file: File | null;
   fileUrl: string;
   fileKey: string; // ← ADDED: store short key for DB (max 50 chars safe)
+  check_date: string;
+  company_name: string;
 };
 
 
@@ -297,6 +299,7 @@ function HRRecordsValidationImpl() {
     name: "", nationality: "", startDate: "",
     documentType: "", documentNumber: "", expiryDate: "", dob: "",
     file: null, fileUrl: "", fileKey: "", // ← ADDED fileKey
+    check_date: "", company_name: "",
   });
 
   useEffect(() => { initHRRecord(); }, [searchParams]);
@@ -454,6 +457,9 @@ function HRRecordsValidationImpl() {
         HRValidationRecord_id: hrRecordId,
 
         rtw_document_url: rtwForm.fileKey || undefined,
+        check_date: rtwForm.check_date || null,
+        company_name: rtwForm.company_name || null,
+        passport_number: rtwForm.documentNumber || null,
       },
       getClientToken()
     );
@@ -474,6 +480,7 @@ function HRRecordsValidationImpl() {
       name: "", nationality: "", startDate: "",
       documentType: "", documentNumber: "", expiryDate: "", dob: "",
       file: null, fileUrl: "", fileKey: "", // ← ADDED fileKey reset
+      check_date: "", company_name: "",
     });
     setShowModal(true);
   };
@@ -691,13 +698,26 @@ function HRRecordsValidationImpl() {
                           formData.append("file", f);
                           const res = await axios.post("/api/extract-rtw", formData);
                           if (res.data.success) {
-                            const { employee_name, nationality, visa_expiry_date, reference_number } = res.data.extracted;
+                            const { employee_name, nationality, visa_expiry_date, reference_number, check_date, company_name } = res.data.extracted;
+                            
+                            const toISODate = (val?: string | null) => {
+                              if (!val) return "";
+                              const d = new Date(val);
+                              if (isNaN(d.getTime())) return val;
+                              const year = d.getFullYear();
+                              const month = String(d.getMonth() + 1).padStart(2, "0");
+                              const day = String(d.getDate()).padStart(2, "0");
+                              return `${year}-${month}-${day}`;
+                            };
+
                             setRtwForm(prev => ({
                               ...prev,
                               name: employee_name || prev.name,
                               nationality: nationality || prev.nationality,
                               expiryDate: visa_expiry_date || prev.expiryDate,
                               documentNumber: reference_number || prev.documentNumber,
+                              check_date: toISODate(check_date) || prev.check_date,
+                              company_name: (company_name || "").replace(/\s+/g, " ").trim() || prev.company_name,
                             }));
                             if (res.data.extracted.name_extraction_failed) {
                               toast.error("Name could not be extracted automatically. Please enter manually.");
@@ -727,6 +747,14 @@ function HRRecordsValidationImpl() {
                 <div style={{ marginBottom: "14px" }}>
                   <label style={lbl}>Immigration Status</label>
                   <input type="text" value={rtwForm.nationality} onChange={(e) => setRtwForm({ ...rtwForm, nationality: e.target.value })} placeholder="e.g. Migrant, British" style={inputStyle} />
+                </div>
+                <div style={{ marginBottom: "14px" }}>
+                  <label style={lbl}>Check Date</label>
+                  <input type="date" value={rtwForm.check_date} onChange={(e) => setRtwForm({ ...rtwForm, check_date: e.target.value })} style={inputStyle} />
+                </div>
+                <div style={{ marginBottom: "14px" }}>
+                  <label style={lbl}>Company Name</label>
+                  <input type="text" value={rtwForm.company_name} onChange={(e) => setRtwForm({ ...rtwForm, company_name: e.target.value })} placeholder="e.g. My Company Ltd" style={inputStyle} />
                 </div>
                 <div style={{ marginBottom: "22px" }}>
                   <label style={lbl}>Employment Start Date *</label>
