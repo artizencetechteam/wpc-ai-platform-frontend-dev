@@ -31,6 +31,10 @@ interface Employee {
   nationality: string;
   documentType?: string;
   pension_status?: string | null;
+  min_22_year_age?: boolean;
+  earning_gbp_10k_above?: boolean;
+  auto_enrollment_date?: string | null;
+  opted_out?: boolean;
   [key: string]: any;
 }
 
@@ -39,6 +43,7 @@ interface Workflow {
   title: string;
   subtitle: string;
   compliant: boolean;
+  issues: string[];
 }
 
 interface StatItem {
@@ -138,10 +143,36 @@ function SummaryPageImpl(): React.JSX.Element {
   const [pensionData, setPensionData] = useState<{ companyRegistered?: string; eligibilityChecks?: Record<string, unknown> }>({});
 
   // Feedback State
+  const [manualOverrides, setManualOverrides] = useState<Record<string, boolean>>({});
   const [comments, setComments] = useState<Record<string, string>>({});
   const [activeCommentSection, setActiveCommentSection] = useState<string | null>(null);
   const [commentText, setCommentText] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  const handleToggleOverride = async (key: string) => {
+    const newVal = !manualOverrides[key];
+    const newOverrides = { ...manualOverrides, [key]: newVal };
+    setManualOverrides(newOverrides);
+
+    if (recordId) {
+      const token = getClientToken();
+      try {
+        const res = await listHRValidationRecordsAction(token);
+        if (res.success && res.data) {
+          const record = res.data.find((r: any) => r.id === Number(recordId));
+          const currentSections = record?.result_complete_sections || {};
+          await updateHRValidationRecordAction(Number(recordId), {
+            result_complete_sections: {
+              ...currentSections,
+              manual_overrides: newOverrides
+            }
+          }, token);
+        }
+      } catch (err) {
+        console.error("Error toggling manual override:", err);
+      }
+    }
+  };
 
   useEffect(() => {
     if (textareaRef.current) {
@@ -205,6 +236,7 @@ function SummaryPageImpl(): React.JSX.Element {
               const saved = record.result_complete_sections || {};
               if (saved.contracts) setContracts(saved.contracts);
               if (saved.pension) setPensionData(saved.pension);
+              if (saved.manual_overrides) setManualOverrides(saved.manual_overrides);
 
               // 4. Financial Data
               const finRes = await listFinancialRecordsAction(token);
@@ -297,36 +329,68 @@ function SummaryPageImpl(): React.JSX.Element {
   const pensionCompliant = !!progress.pension && pensionData.companyRegistered !== "no" && !hasNonCompliantPension;
   const contractsCompliant = !!progress.contracts && (contractsTotal === 0 || contractsPassed === contractsTotal);
 
+  // --- Calculate issues for each workflow ---
+  const rtwIssues: string[] = [];
+  if (!progress.rtw) rtwIssues.push("Section has not been reviewed or completed.");
+
+  const authIssues: string[] = [];
+  if (!progress.auth) authIssues.push("Authorising Officer assessment has not been completed.");
+
+  const pensionIssues: string[] = [];
+  if (!progress.pension) pensionIssues.push("Pension section not completed.");
+  if (pensionData.companyRegistered === "no") pensionIssues.push("Company is not registered with a qualifying pension scheme.");
+  if (hasNonCompliantPension) pensionIssues.push("One or more eligible employees are not enrolled in auto-enrolment.");
+
+  const contractsIssues: string[] = [];
+  if (!progress.contracts) contractsIssues.push("Contracts section not completed.");
+  if (contractsTotal > 0 && contractsPassed < contractsTotal) {
+    contractsIssues.push(`${contractsTotal - contractsPassed} contract(s) failed validation checks.`);
+  }
+
+  const financialIssues: string[] = [];
+  if (!progress.financial) financialIssues.push("Financial viability section not completed.");
+  if ((financialData.balance ?? 0) < 10425) financialIssues.push(`Closing balance (£${(financialData.balance ?? 0).toLocaleString()}) is below the required £10,425.`);
+  if (financialData.netCashFlow != null && financialData.netCashFlow <= 0) financialIssues.push(`Net cash flow is negative or zero (£${financialData.netCashFlow.toLocaleString()}).`);
+  if (hasFlaggedTransactions) financialIssues.push("High-risk or failed transactions were identified in the bank statement.");
+  if (financialData.paymentsReflected === "no" && financialData.futureEngagement !== "yes") {
+    financialIssues.push("Payments are not reflected in bank statement and no evidence of future engagement was provided.");
+  }
+
   const workflows: Workflow[] = [
     {
       key: "rtw",
       title: "RTW & Start Date Compliance",
       subtitle: rtwSubtitle,
-      compliant: !!progress.rtw,
+      compliant: !!progress.rtw || !!manualOverrides.rtw,
+      issues: !!manualOverrides.rtw ? [] : rtwIssues,
     },
     {
       key: "pension",
       title: "Pension Compliance",
       subtitle: pensionSubtitle,
-      compliant: pensionCompliant,
+      compliant: pensionCompliant || !!manualOverrides.pension,
+      issues: !!manualOverrides.pension ? [] : pensionIssues,
     },
     {
       key: "auth",
       title: "Authorising Officer",
       subtitle: companyName ? `Validated for ${companyName}` : "Authorising Officer assessed",
-      compliant: !!progress.auth,
+      compliant: !!progress.auth || !!manualOverrides.auth,
+      issues: !!manualOverrides.auth ? [] : authIssues,
     },
     {
       key: "contracts",
       title: "Client Contracts",
       subtitle: contractsSubtitle,
-      compliant: contractsCompliant,
+      compliant: contractsCompliant || !!manualOverrides.contracts,
+      issues: !!manualOverrides.contracts ? [] : contractsIssues,
     },
     {
       key: "financial",
       title: "Financial Viability",
       subtitle: financialSubtitle,
-      compliant: financialCompliant,
+      compliant: financialCompliant || !!manualOverrides.financial,
+      issues: !!manualOverrides.financial ? [] : financialIssues,
     },
   ];
 
@@ -373,6 +437,9 @@ function SummaryPageImpl(): React.JSX.Element {
           .no-print {
             display: none !important;
           }
+          .print-only {
+            display: inline-block !important;
+          }
           .print-container {
             width: 100% !important;
             max-width: none !important;
@@ -391,6 +458,9 @@ function SummaryPageImpl(): React.JSX.Element {
             -webkit-print-color-adjust: exact !important;
             print-color-adjust: exact !important;
           }
+        }
+        .print-only {
+          display: none !important;
         }
       `}</style>
       <div className="no-print">
@@ -481,6 +551,14 @@ function SummaryPageImpl(): React.JSX.Element {
                 </div>
               </div>
             )}
+            {financialData.outgoing != null && (
+              <div style={{ textAlign: "center" }}>
+                <div style={{ fontSize: "11px", color: "#64748B", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: "4px" }}>Total Outgoing</div>
+                <div style={{ fontSize: "20px", fontWeight: "700", color: "#DC2626" }}>
+                  £{financialData.outgoing.toLocaleString()}
+                </div>
+              </div>
+            )}
             {financialData.netCashFlow != null && (
               <div style={{ textAlign: "center" }}>
                 <div style={{ fontSize: "11px", color: "#64748B", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: "4px" }}>Net Cash Flow</div>
@@ -505,36 +583,60 @@ function SummaryPageImpl(): React.JSX.Element {
             const Icon = workflowIcons[w.key];
             return (
               <div key={w.key} style={{
-                display: "flex", alignItems: "center", justifyContent: "space-between",
                 padding: "14px 16px", backgroundColor: "#F8FAFC", borderRadius: "8px",
                 marginBottom: i < workflows.length - 1 ? "8px" : 0,
+                border: w.compliant ? "1px solid transparent" : "1px solid #FEE2E2",
               }}>
-                <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-                  <div style={{ width: "36px", height: "36px", borderRadius: "8px", backgroundColor: "white", border: "1px solid #E2E8F0", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                    <Icon />
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                    <div style={{ width: "36px", height: "36px", borderRadius: "8px", backgroundColor: "white", border: "1px solid #E2E8F0", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                      <Icon />
+                    </div>
+                    <div>
+                      <div style={{ fontSize: "14px", fontWeight: "600", color: "#0F172A" }}>{w.title}</div>
+                      <div style={{ fontSize: "12px", color: "#64748B", marginTop: "2px" }}>{w.subtitle}</div>
+                    </div>
                   </div>
-                  <div>
-                    <div style={{ fontSize: "14px", fontWeight: "600", color: "#0F172A" }}>{w.title}</div>
-                    <div style={{ fontSize: "12px", color: "#64748B", marginTop: "2px" }}>{w.subtitle}</div>
+                  <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                    <button 
+                      className="no-print"
+                      onClick={() => { setActiveCommentSection(`Workflow: ${w.title}`); setCommentText(comments[`Workflow: ${w.title}`] || ""); }} 
+                      style={{ background: "none", border: "none", color: "#64748B", cursor: "pointer", display: "flex", alignItems: "center", gap: "4px", fontSize: "12px", fontWeight: "600", padding: "4px", marginRight: "4px" }}
+                      title="Add Comment"
+                    >
+                      <MessageIcon />
+                    </button>
+                    <span 
+                      className="no-print"
+                      onClick={() => handleToggleOverride(w.key)}
+                      style={{
+                        padding: "4px 12px", borderRadius: "20px", fontSize: "12px", fontWeight: "700",
+                        backgroundColor: w.compliant ? "#16A34A" : "#DC2626", color: "white",
+                        cursor: "pointer",
+                        userSelect: "none",
+                        transition: "all 0.2s"
+                      }}
+                      onMouseOver={(e) => e.currentTarget.style.opacity = "0.8"}
+                      onMouseOut={(e) => e.currentTarget.style.opacity = "1"}
+                      title="Click to manually toggle compliance status"
+                    >
+                      {w.compliant ? "Compliant" : "Non-Compliant"}
+                    </span>
+                    {w.compliant ? <GreenCircleCheck /> : <RedCircleX />}
                   </div>
                 </div>
-                <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-                  <button 
-                    className="no-print"
-                    onClick={() => { setActiveCommentSection(`Workflow: ${w.title}`); setCommentText(comments[`Workflow: ${w.title}`] || ""); }} 
-                    style={{ background: "none", border: "none", color: "#64748B", cursor: "pointer", display: "flex", alignItems: "center", gap: "4px", fontSize: "12px", fontWeight: "600", padding: "4px", marginRight: "4px" }}
-                    title="Add Comment"
-                  >
-                    <MessageIcon />
-                  </button>
-                  <span style={{
-                    padding: "4px 12px", borderRadius: "20px", fontSize: "12px", fontWeight: "700",
-                    backgroundColor: w.compliant ? "#16A34A" : "#DC2626", color: "white",
-                  }}>
-                    {w.compliant ? "Compliant" : "Non-Compliant"}
-                  </span>
-                  {w.compliant ? <GreenCircleCheck /> : <RedCircleX />}
-                </div>
+
+                {/* Issues list */}
+                {!w.compliant && w.issues.length > 0 && (
+                  <div style={{ marginTop: "12px", borderTop: "1px solid #FEE2E2", paddingTop: "10px" }}>
+                    {w.issues.map((issue, idx) => (
+                      <div key={idx} style={{ display: "flex", alignItems: "flex-start", gap: "8px", marginBottom: idx < w.issues.length - 1 ? "4px" : 0 }}>
+                        <div style={{ color: "#DC2626", fontSize: "12px", marginTop: "2px" }}>•</div>
+                        <div style={{ fontSize: "12.5px", color: "#991B1B", lineHeight: "1.4" }}>{issue}</div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             );
           })}
@@ -559,10 +661,10 @@ function SummaryPageImpl(): React.JSX.Element {
                     backgroundColor: "#EFF6FF", display: "flex", alignItems: "center", justifyContent: "center",
                     fontSize: "14px", fontWeight: "700", color: "#0852C9", flexShrink: 0,
                   }}>
-                    {(emp.name || "?")[0].toUpperCase()}
+                    {(emp.employee_full_name || "?")[0].toUpperCase()}
                   </div>
                   <div>
-                    <div style={{ fontSize: "14px", fontWeight: "600", color: "#0F172A" }}>{emp.name}</div>
+                    <div style={{ fontSize: "14px", fontWeight: "600", color: "#0F172A" }}>{emp.employee_full_name}</div>
                     <div style={{ fontSize: "12px", color: "#64748B", marginTop: "2px" }}>{emp.nationality}</div>
                   </div>
                 </div>

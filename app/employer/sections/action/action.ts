@@ -151,6 +151,8 @@ export type FinancialRecord = {
   current_closing_balance_gbp?: string | null;
   total_incoming_gbp_credits?: string | null;
   total_outgoing_gbp_debits?: string | null;
+  payment_incoming_total?: string | null;
+  payment_outgoing_total?: string | null;
   payments_reflected_in_bank?: boolean | null;
   is_future_engagement?: boolean | null;
   HRValidationRecord_id?: number | null;

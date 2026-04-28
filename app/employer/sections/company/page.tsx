@@ -93,7 +93,7 @@ function CompanyPageImpl() {
   const [loading, setLoading] = useState(true);
   const [apiError, setApiError] = useState("");
   const [companyName, setCompanyName] = useState("");
-  const [bankName, setBankName] = useState("");
+  const [bankName, setBankName] = useState("Other Banks");
   const [tabProgress, setTabProgress] = useState<Record<string, boolean>>({});
 
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -101,6 +101,8 @@ function CompanyPageImpl() {
   const [uploadedFileName, setUploadedFileName] = useState("");
   const [manualOpening, setManualOpening] = useState("");
   const [manualClosing, setManualClosing] = useState("");
+  const [paymentIncomingTotal, setPaymentIncomingTotal] = useState<number | null>(null);
+  const [paymentOutgoingTotal, setPaymentOutgoingTotal] = useState<number | null>(null);
 
   const [transactions, setTransactions] = useState<any[]>([]);
   const [searchDate, setSearchDate] = useState("");
@@ -212,6 +214,15 @@ function CompanyPageImpl() {
       }
       if (extractedClosing !== null) {
         setManualClosing(String(extractedClosing));
+      }
+
+      // New: Extract total_paid_in and total_paid_out
+      const extractedPaidIn = extractionResult.total_paid_in ?? null;
+      const extractedPaidOut = extractionResult.total_paid_out ?? null;
+      setPaymentIncomingTotal(extractedPaidIn);
+      setPaymentOutgoingTotal(extractedPaidOut);
+      if (extractedPaidIn !== null || extractedPaidOut !== null) {
+        console.log("[Extraction] Total Paid In:", extractedPaidIn, "Total Paid Out:", extractedPaidOut);
       }
 
       // Capture S3 URL from response
@@ -328,6 +339,8 @@ function CompanyPageImpl() {
             srvBank = record.bank_name;
             setBankName(srvBank);
             sessionStorage.setItem(`bank_name_${recordId}`, srvBank);
+          } else {
+            setBankName("Other Banks");
           }
           if (record.bank_statement_url) {
             setBankStatementUrl(record.bank_statement_url);
@@ -340,6 +353,7 @@ function CompanyPageImpl() {
 
         const savedBank = sessionStorage.getItem(`bank_name_${recordId}`);
         if (savedBank && !srvBank) setBankName(savedBank);
+        else if (!srvBank) setBankName("Other Banks");
 
         // --- NEW: Hydrate Transactions and Balances from server ---
         if (record) {
@@ -349,6 +363,8 @@ function CompanyPageImpl() {
           }
           if (record.Opening_Balance) setManualOpening(String(record.Opening_Balance));
           if (record.Closing_Balance) setManualClosing(String(record.Closing_Balance));
+          if (record.payment_incoming_total !== undefined) setPaymentIncomingTotal(record.payment_incoming_total);
+          if (record.payment_outgoing_total !== undefined) setPaymentOutgoingTotal(record.payment_outgoing_total);
         }
 
         // Fetch Financial Record for balances
@@ -394,6 +410,8 @@ function CompanyPageImpl() {
         Opening_Balance: manualOpening,
         Closing_Balance: manualClosing,
         bank_statement_url: bankStatementUrl,
+        payment_incoming_total: paymentIncomingTotal,
+        payment_outgoing_total: paymentOutgoingTotal,
       }, token);
 
       // Mark company step as complete in progress map
@@ -472,7 +490,7 @@ function CompanyPageImpl() {
                 onBlur={(e) => e.target.style.borderColor = "#D1D5DB"}
               >
                 <option value="">Select a Bank...</option>
-                <option value="Generic (AI Vision)">Generic (AI Vision)</option>
+                <option value="Other Banks">Other Banks</option>
                 <option value="NATWEST">NATWEST</option>
                 <option value="SANTANDER">SANTANDER</option>
                 <option value="VIRGIN">VIRGIN</option>

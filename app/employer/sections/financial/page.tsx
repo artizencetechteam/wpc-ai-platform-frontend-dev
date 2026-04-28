@@ -47,6 +47,8 @@ interface FinancialData {
   outgoing?: number;
   netCashFlow?: number;
   transactions?: Transaction[];
+  payment_incoming_total?: number | null;
+  payment_outgoing_total?: number | null;
   paymentsReflected?: string | null;
   futureEngagement?: string | null;
   bank_statement_url?: string | null;
@@ -480,7 +482,7 @@ function InvestmentsStep({ onNext, onPrev, onSave, initialTransactions, initialO
 
     const formData = new FormData();
     formData.append("file", file);
-    formData.append("bank_name", storedBankName || "Generic (AI Vision)");
+    formData.append("bank_name", storedBankName || "Other Banks");
     formData.append("manual_opening", "");
     formData.append("manual_closing", "");
     formData.append("employee_name", "string");
@@ -544,10 +546,21 @@ function InvestmentsStep({ onNext, onPrev, onSave, initialTransactions, initialO
         setManualClosing(String(extractedClosing));
       }
 
+      // New: Extract total_paid_in and total_paid_out
+      const extractedPaidIn = extractionResult.total_paid_in ?? null;
+      const extractedPaidOut = extractionResult.total_paid_out ?? null;
+
       // Capture S3 URL
       const s3Url = extractionResult.file_url || extractionResult.s3_url || extractionResult.bank_statement_url || "";
       if (s3Url) {
-        onSave({ bank_statement_url: s3Url });
+        onSave({ 
+          bank_statement_url: s3Url,
+          payment_incoming_total: extractedPaidIn,
+          payment_outgoing_total: extractedPaidOut,
+          // Pre-fill Step 2 fields as well
+          incoming: extractedPaidIn !== null ? extractedPaidIn : undefined,
+          outgoing: extractedPaidOut !== null ? extractedPaidOut : undefined
+        });
       }
 
       if (mapped.length === 0) {
@@ -1051,7 +1064,12 @@ function FinancialPageImpl(): React.JSX.Element {
                   : prev.transactions,
                 Opening_Balance: hrRecord.Opening_Balance ?? prev.Opening_Balance,
                 Closing_Balance: hrRecord.Closing_Balance ?? prev.Closing_Balance,
-                bank_statement_url: hrRecord.bank_statement_url ?? prev.bank_statement_url
+                bank_statement_url: hrRecord.bank_statement_url ?? prev.bank_statement_url,
+                payment_incoming_total: hrRecord.payment_incoming_total ?? prev.payment_incoming_total,
+                payment_outgoing_total: hrRecord.payment_outgoing_total ?? prev.payment_outgoing_total,
+                // Also sync Step 2 fields if they are missing
+                incoming: hrRecord.payment_incoming_total != null ? parseFloat(hrRecord.payment_incoming_total) : prev.incoming,
+                outgoing: hrRecord.payment_outgoing_total != null ? parseFloat(hrRecord.payment_outgoing_total) : prev.outgoing
               }));
             }
           }
@@ -1064,8 +1082,10 @@ function FinancialPageImpl(): React.JSX.Element {
               setFinancialData(prev => ({
                 ...prev,
                 balance: finRecord.current_closing_balance_gbp != null ? parseFloat(finRecord.current_closing_balance_gbp) : prev.balance,
-                incoming: finRecord.total_incoming_gbp_credits != null ? parseFloat(finRecord.total_incoming_gbp_credits) : prev.incoming,
-                outgoing: finRecord.total_outgoing_gbp_debits != null ? parseFloat(finRecord.total_outgoing_gbp_debits) : prev.outgoing,
+                incoming: finRecord.payment_incoming_total != null ? parseFloat(finRecord.payment_incoming_total) : prev.incoming,
+                outgoing: finRecord.payment_outgoing_total != null ? parseFloat(finRecord.payment_outgoing_total) : prev.outgoing,
+                payment_incoming_total: finRecord.payment_incoming_total != null ? parseFloat(finRecord.payment_incoming_total) : prev.payment_incoming_total,
+                payment_outgoing_total: finRecord.payment_outgoing_total != null ? parseFloat(finRecord.payment_outgoing_total) : prev.payment_outgoing_total,
                 paymentsReflected: finRecord.payments_reflected_in_bank === true ? "yes" : finRecord.payments_reflected_in_bank === false ? "no" : prev.paymentsReflected,
                 futureEngagement: finRecord.is_future_engagement === true ? "yes" : finRecord.is_future_engagement === false ? "no" : prev.futureEngagement,
               }));
@@ -1117,6 +1137,8 @@ function FinancialPageImpl(): React.JSX.Element {
           Opening_Balance: financialData.Opening_Balance,
           Closing_Balance: financialData.Closing_Balance,
           bank_statement_url: financialData.bank_statement_url,
+          payment_incoming_total: financialData.incoming,
+          payment_outgoing_total: financialData.outgoing,
         }, token);
 
         // Prepare payload for Financial Record
@@ -1124,6 +1146,8 @@ function FinancialPageImpl(): React.JSX.Element {
           current_closing_balance_gbp: financialData.balance != null ? String(financialData.balance) : null,
           total_incoming_gbp_credits: financialData.incoming != null ? String(financialData.incoming) : null,
           total_outgoing_gbp_debits: financialData.outgoing != null ? String(financialData.outgoing) : null,
+          payment_incoming_total: financialData.incoming != null ? String(financialData.incoming) : null,
+          payment_outgoing_total: financialData.outgoing != null ? String(financialData.outgoing) : null,
           payments_reflected_in_bank: financialData.paymentsReflected === "yes" ? true : financialData.paymentsReflected === "no" ? false : null,
           is_future_engagement: financialData.futureEngagement === "yes" ? true : financialData.futureEngagement === "no" ? false : null,
           HRValidationRecord_id: recordId,
