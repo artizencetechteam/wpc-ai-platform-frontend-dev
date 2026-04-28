@@ -5,7 +5,7 @@ export async function POST(req: Request) {
     const formData = await req.formData();
     
     // Forward to the external API
-    const response = await fetch("https://wpc-ai-agents.onrender.com/rtw/extract", {
+    const response = await fetch("https://wpc-ai-agents-1.onrender.com/rtw/extract", {
       method: "POST",
       body: formData,
     });
