@@ -116,6 +116,12 @@ const CloudIcon = (): React.JSX.Element => (
   </svg>
 );
 
+const TrashIcon = (): React.JSX.Element => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#EF4444" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M10 11v6M14 11v6" />
+  </svg>
+);
+
 // ─── TopNav ───────────────────────────────────────────────────────────────────
 
 function TopNav({ onBack }: { onBack: () => void }) {
@@ -136,21 +142,55 @@ function AddContractForm({ onAdd, onCancel }: AddContractFormProps): React.JSX.E
   const [exists, setExists] = useState<string | null>(null);
   const [aligns, setAligns] = useState<string | null>(null);
   const [fileName, setFileName] = useState<string | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
+  const [fileObject, setFileObject] = useState<File | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const canAdd = clientName.trim() && exists;
+  const canAdd = clientName.trim() && exists && !isUploading;
   const showAligns = exists === "yes";
   const showUpload = exists === "yes";
 
-  const handleAdd = (): void => {
+  const uploadToCloudflare = async (file: File) => {
+    const { data: presignData } = await axios.post("/api/upload-presign", {
+      fileName: file.name,
+      fileType: file.type,
+    });
+    const { presignedUrl, publicUrl } = presignData;
+    await axios.put(presignedUrl, file, {
+      headers: { "Content-Type": file.type },
+    });
+    return publicUrl;
+  };
+
+  const handleAdd = async (): Promise<void> => {
     if (!canAdd) return;
+    
+    let documentUrl = fileName;
+    
+    if (fileObject) {
+      setIsUploading(true);
+      const loadingToast = toast.loading("Uploading contract document...");
+      try {
+        documentUrl = await uploadToCloudflare(fileObject);
+        toast.success("Document uploaded successfully.");
+      } catch (error) {
+        toast.error("Failed to upload document.");
+        setIsUploading(false);
+        toast.dismiss(loadingToast);
+        return;
+      } finally {
+        toast.dismiss(loadingToast);
+      }
+    }
+
     onAdd({
       id: Date.now(),
       clientName: clientName.trim(),
       exists: exists as "yes" | "no",
       aligns: exists === "no" ? "no" : (aligns as "yes" | "no" | null),
-      document: fileName,
+      document: documentUrl,
     });
+    setIsUploading(false);
   };
 
   const RadioRow = ({ value, selected, onChange, label }: RadioRowProps): React.JSX.Element => (
@@ -215,16 +255,33 @@ function AddContractForm({ onAdd, onCancel }: AddContractFormProps): React.JSX.E
       {showUpload && (
         <div style={{ marginBottom: "20px" }}>
           <label style={lbl}>Upload Contract Document (Optional)</label>
-          <input ref={inputRef} type="file" accept=".pdf" style={{ display: "none" }} onChange={(e) => setFileName(e.target.files?.[0]?.name || null)} />
+          <input 
+            ref={inputRef} 
+            type="file" 
+            accept=".pdf" 
+            style={{ display: "none" }} 
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) {
+                setFileObject(file);
+                setFileName(file.name);
+              }
+            }} 
+          />
           <div
-            onClick={() => inputRef.current?.click()}
+            onClick={() => !isUploading && inputRef.current?.click()}
             style={{
               border: "1.5px dashed #D1D5DB", borderRadius: "8px", padding: "24px 20px",
-              textAlign: "center", cursor: "pointer", backgroundColor: "#F9FAFB",
+              textAlign: "center", cursor: isUploading ? "not-allowed" : "pointer", backgroundColor: "#F9FAFB",
+              opacity: isUploading ? 0.6 : 1,
             }}
           >
-            <div style={{ display: "flex", justifyContent: "center", marginBottom: "6px" }}><UploadIcon /></div>
-            <p style={{ margin: 0, fontSize: "13px", color: "#9CA3AF" }}>{fileName || "Upload contract PDF"}</p>
+            <div style={{ display: "flex", justifyContent: "center", marginBottom: "6px" }}>
+              {isUploading ? <SpinnerIcon color="#9CA3AF" /> : <UploadIcon />}
+            </div>
+            <p style={{ margin: 0, fontSize: "13px", color: "#9CA3AF" }}>
+              {isUploading ? "Uploading..." : (fileName || "Upload contract PDF")}
+            </p>
           </div>
         </div>
       )}
@@ -232,13 +289,14 @@ function AddContractForm({ onAdd, onCancel }: AddContractFormProps): React.JSX.E
       {/* Actions */}
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
         <button onClick={onCancel} style={cancelBtn}>Cancel</button>
-        <button
-          onClick={handleAdd}
-          disabled={!canAdd}
-          style={{ ...primaryBtn, opacity: canAdd ? 1 : 0.5, cursor: canAdd ? "pointer" : "not-allowed" }}
-        >
-          Add Contract
-        </button>
+          <button
+            onClick={handleAdd}
+            disabled={!canAdd}
+            style={{ ...primaryBtn, opacity: canAdd ? 1 : 0.5, cursor: canAdd ? "pointer" : "not-allowed", display: "flex", alignItems: "center", justifyContent: "center", gap: "8px" }}
+          >
+            {isUploading && <SpinnerIcon color="#fff" />}
+            {isUploading ? "Uploading..." : "Add Contract"}
+          </button>
       </div>
     </div>
   );
@@ -287,13 +345,23 @@ function ContractsPageImpl(): React.JSX.Element {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    const formData = new FormData();
-    formData.append("file", file);
-
     setIsParsing(true);
-    const loadingToast = toast.loading("Analyzing contract PDF...");
+    const loadingToast = toast.loading("Uploading and analyzing contract PDF...");
 
     try {
+      // 1. Upload to Cloudflare R2
+      const { data: presignData } = await axios.post("/api/upload-presign", {
+        fileName: file.name,
+        fileType: file.type,
+      });
+      const { presignedUrl, publicUrl } = presignData;
+      await axios.put(presignedUrl, file, {
+        headers: { "Content-Type": file.type },
+      });
+
+      // 2. Extract data
+      const formData = new FormData();
+      formData.append("file", file);
       const response = await axios.post("/api/extract-contract", formData);
       const resData = response.data;
       
@@ -308,7 +376,7 @@ function ContractsPageImpl(): React.JSX.Element {
           clientName: clientName,
           exists: "yes",
           aligns: "yes",
-          document: resData.source || file.name,
+          document: publicUrl, // Use the Cloudflare URL
           contract_amount: c.contract_amount,
           period: c.period,
           text_block: c.text_block
@@ -332,6 +400,11 @@ function ContractsPageImpl(): React.JSX.Element {
   const handleAddContract = (contract: Contract): void => {
     setContracts((prev) => [...prev, contract]);
     setShowForm(false);
+  };
+
+  const handleDeleteContract = (id: number): void => {
+    setContracts((prev) => prev.filter(c => c.id !== id));
+    toast.success("Contract removed.");
   };
 
   const handleContinue = async (): Promise<void> => {
@@ -426,19 +499,43 @@ function ContractsPageImpl(): React.JSX.Element {
             {hasContracts && (
               <div style={{ backgroundColor: "white", borderRadius: "10px", border: "1px solid #E2E8F0", padding: "20px 24px", marginBottom: "14px" }}>
                 <h3 style={{ margin: "0 0 16px", fontSize: "15px", fontWeight: "700", color: "#0F172A" }}>Added Contracts</h3>
-                <div style={{ display: "grid", gridTemplateColumns: "1.5fr 1fr 1fr 1fr 1fr 1fr", padding: "0 4px 10px", borderBottom: "1px solid #F1F5F9" }}>
-                  {["Client Name", "Amount", "Period", "Exists", "Aligns", "Doc"].map((h) => (
+                <div style={{ display: "grid", gridTemplateColumns: "1.5fr 1fr 1fr 1fr 1fr 0.8fr 0.5fr", padding: "0 4px 10px", borderBottom: "1px solid #F1F5F9" }}>
+                  {["Client Name", "Amount", "Period", "Exists", "Aligns", "Doc", ""].map((h) => (
                     <div key={h} style={{ fontSize: "12.5px", color: "#94A3B8", fontWeight: "500" }}>{h}</div>
                   ))}
                 </div>
                 {contracts.map((c) => (
-                  <div key={c.id} style={{ display: "grid", gridTemplateColumns: "1.5fr 1fr 1fr 1fr 1fr 1fr", padding: "13px 4px", borderBottom: "1px solid #F8FAFC", alignItems: "center" }}>
+                  <div key={c.id} style={{ display: "grid", gridTemplateColumns: "1.5fr 1fr 1fr 1fr 1fr 0.8fr 0.5fr", padding: "13px 4px", borderBottom: "1px solid #F8FAFC", alignItems: "center" }}>
                     <div style={{ fontSize: "14px", color: "#0F172A", fontWeight: "500" }}>{c.clientName}</div>
                     <div style={{ fontSize: "13px", color: "#64748B" }}>{c.contract_amount || "—"}</div>
                     <div style={{ fontSize: "13px", color: "#64748B" }}>{c.period || "—"}</div>
                     <div>{c.exists === "yes" ? <GreenCheck /> : <YellowWarn />}</div>
                     <div>{c.aligns === "yes" ? <GreenCheck /> : c.aligns === "no" ? <YellowWarn /> : <span style={{ color: "#94A3B8" }}>—</span>}</div>
-                    <div style={{ fontSize: "14px", color: "#94A3B8" }}>{c.document ? "✓" : "—"}</div>
+                    <div style={{ fontSize: "14px", color: "#94A3B8" }}>
+                      {c.document ? (
+                        <a 
+                          href={c.document.startsWith('http') ? c.document : '#'} 
+                          target="_blank" 
+                          rel="noopener noreferrer"
+                          style={{ 
+                            color: c.document.startsWith('http') ? "#0852C9" : "#94A3B8", 
+                            textDecoration: c.document.startsWith('http') ? "underline" : "none",
+                            cursor: c.document.startsWith('http') ? "pointer" : "default"
+                          }}
+                        >
+                          {c.document.startsWith('http') ? "View" : "✓"}
+                        </a>
+                      ) : "—"}
+                    </div>
+                    <div>
+                      <button 
+                        onClick={() => handleDeleteContract(c.id)}
+                        style={{ border: "none", backgroundColor: "transparent", cursor: "pointer", padding: "4px", display: "flex", alignItems: "center", justifyContent: "center" }}
+                        title="Delete contract"
+                      >
+                        <TrashIcon />
+                      </button>
+                    </div>
                   </div>
                 ))}
               </div>
