@@ -2,6 +2,8 @@
 
 import { useState, useEffect, useRef, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import axios from "axios";
+import toast from "react-hot-toast";
 import HRValidationTabs from "../_components/HRValidationTabs";
 import { updateHRValidationRecordAction, listHRValidationRecordsAction } from "@/app/employer/sections/action/action";
 import { getClientToken } from "@/app/employer/sections/company/page";
@@ -23,6 +25,9 @@ interface Contract {
   exists: "yes" | "no";
   aligns: "yes" | "no" | null;
   document: string | null;
+  contract_amount?: string;
+  period?: string;
+  text_block?: string;
 }
 
 type ContractStatus = "pass" | "fail" | "pending";
@@ -122,6 +127,13 @@ const SpinnerIcon = ({ color = "#0852C9" }: { color?: string }) => (
     <circle cx="10" cy="10" r="8" stroke="#CBD5E1" strokeWidth="2.5" />
     <path d="M10 2a8 8 0 018 8" stroke={color} strokeWidth="2.5" strokeLinecap="round" />
     <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
+  </svg>
+);
+
+const CloudIcon = (): React.JSX.Element => (
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M17.5 19L19 19C21.2091 19 23 17.2091 23 15C23 12.7909 21.2091 11 19 11C18.8296 11 18.6625 11.0107 18.4988 11.0317C17.7412 8.14811 15.1182 6 12 6C9.11584 6 6.6247 7.8258 5.67232 10.3957C3.12061 10.7483 1 12.9163 1 15.5C1 18.5376 3.46243 21 6.5 21L8 21" />
+    <path d="M12 11V21M12 11L9 14M12 11L15 14" />
   </svg>
 );
 
@@ -271,6 +283,9 @@ function ContractsPageImpl(): React.JSX.Element {
   const [recordId, setRecordId] = useState<number | null>(null);
   const [businessNature, setBusinessNature] = useState<string>("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isParsing, setIsParsing] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [extractionData, setExtractionData] = useState<any>(null);
 
   useEffect(() => {
     const queryId = searchParams.get("recordId") || searchParams.get("id");
@@ -284,9 +299,56 @@ function ContractsPageImpl(): React.JSX.Element {
         const saved = await getSavedResults(parsedId);
         if (saved.business_nature) setBusinessNature(saved.business_nature);
         if (saved.contracts && Array.isArray(saved.contracts)) setContracts(saved.contracts);
+        if (saved.contract_extraction_data) setExtractionData(saved.contract_extraction_data);
       })();
     }
   }, [searchParams]);
+
+  const handleContractUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const formData = new FormData();
+    formData.append("file", file);
+
+    setIsParsing(true);
+    const loadingToast = toast.loading("Analyzing contract PDF...");
+
+    try {
+      const response = await axios.post("/api/extract-contract", formData);
+      const resData = response.data;
+      
+      setExtractionData(resData);
+
+      if (resData.contracts && Array.isArray(resData.contracts)) {
+        const clientParty = resData.parties?.find((p: any) => p.role === "Client");
+        const clientName = clientParty?.entity_name || "Extracted Client";
+
+        const newContracts: Contract[] = resData.contracts.map((c: any, idx: number) => ({
+          id: Date.now() + idx,
+          clientName: clientName,
+          exists: "yes",
+          aligns: "yes",
+          document: resData.source || file.name,
+          contract_amount: c.contract_amount,
+          period: c.period,
+          text_block: c.text_block
+        }));
+
+        setContracts((prev) => [...prev, ...newContracts]);
+        toast.success(`Successfully extracted ${newContracts.length} contracts.`);
+      } else {
+        toast.error("No contracts found in the document.");
+      }
+    } catch (error: any) {
+      console.error("Contract extraction error:", error);
+      toast.error("Failed to extract contract details.");
+    } finally {
+      setIsParsing(false);
+      toast.dismiss(loadingToast);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  };
 
   const handleAddContract = (contract: Contract): void => {
     setContracts((prev) => [...prev, contract]);
@@ -306,6 +368,7 @@ function ContractsPageImpl(): React.JSX.Element {
             business_nature: businessNature,
             contracts_count: contracts.length,
             contracts: contracts,
+            contract_extraction_data: extractionData,
           }
         }, token);
         router.push(`/employer/sections/financial?recordId=${recordId}`);
@@ -385,16 +448,18 @@ function ContractsPageImpl(): React.JSX.Element {
             {hasContracts && (
               <div style={{ backgroundColor: "white", borderRadius: "10px", border: "1px solid #E2E8F0", padding: "20px 24px", marginBottom: "14px" }}>
                 <h3 style={{ margin: "0 0 16px", fontSize: "15px", fontWeight: "700", color: "#0F172A" }}>Added Contracts</h3>
-                <div style={{ display: "grid", gridTemplateColumns: "2fr 1.2fr 1.5fr 1fr 1fr", padding: "0 4px 10px", borderBottom: "1px solid #F1F5F9" }}>
-                  {["Client Name", "Contract Exists", "Aligns with Activity", "Document", "Status"].map((h) => (
+                <div style={{ display: "grid", gridTemplateColumns: "1.5fr 1fr 1fr 1fr 1fr 1fr 1fr", padding: "0 4px 10px", borderBottom: "1px solid #F1F5F9" }}>
+                  {["Client Name", "Amount", "Period", "Exists", "Aligns", "Doc", "Status"].map((h) => (
                     <div key={h} style={{ fontSize: "12.5px", color: "#94A3B8", fontWeight: "500" }}>{h}</div>
                   ))}
                 </div>
                 {contracts.map((c) => {
                   const status = getContractStatus(c);
                   return (
-                    <div key={c.id} style={{ display: "grid", gridTemplateColumns: "2fr 1.2fr 1.5fr 1fr 1fr", padding: "13px 4px", borderBottom: "1px solid #F8FAFC", alignItems: "center" }}>
+                    <div key={c.id} style={{ display: "grid", gridTemplateColumns: "1.5fr 1fr 1fr 1fr 1fr 1fr 1fr", padding: "13px 4px", borderBottom: "1px solid #F8FAFC", alignItems: "center" }}>
                       <div style={{ fontSize: "14px", color: "#0F172A", fontWeight: "500" }}>{c.clientName}</div>
+                      <div style={{ fontSize: "13px", color: "#64748B" }}>{c.contract_amount || "—"}</div>
+                      <div style={{ fontSize: "13px", color: "#64748B" }}>{c.period || "—"}</div>
                       <div>{c.exists === "yes" ? <GreenCheck /> : <YellowWarn />}</div>
                       <div>{c.aligns === "yes" ? <GreenCheck /> : c.aligns === "no" ? <YellowWarn /> : <span style={{ color: "#94A3B8" }}>—</span>}</div>
                       <div style={{ fontSize: "14px", color: "#94A3B8" }}>{c.document ? "✓" : "—"}</div>
@@ -421,18 +486,41 @@ function ContractsPageImpl(): React.JSX.Element {
             {showForm ? (
               <AddContractForm onAdd={handleAddContract} onCancel={() => setShowForm(false)} />
             ) : (
-              <button
-                onClick={() => setShowForm(true)}
-                style={{
-                  width: "100%", padding: "14px", backgroundColor: "white",
-                  border: "1.5px solid #E2E8F0", borderRadius: "10px",
-                  fontSize: "14px", fontWeight: "500", color: "#374151",
-                  cursor: "pointer", display: "flex", alignItems: "center",
-                  justifyContent: "center", gap: "8px", marginBottom: "14px",
-                }}
-              >
-                <span style={{ fontSize: "16px" }}>+</span> Add Client Contract
-              </button>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px", marginBottom: "14px" }}>
+                <button
+                  onClick={() => setShowForm(true)}
+                  style={{
+                    width: "100%", padding: "14px", backgroundColor: "white",
+                    border: "1.5px solid #E2E8F0", borderRadius: "10px",
+                    fontSize: "14px", fontWeight: "500", color: "#374151",
+                    cursor: "pointer", display: "flex", alignItems: "center",
+                    justifyContent: "center", gap: "8px",
+                  }}
+                >
+                  <span style={{ fontSize: "16px" }}>+</span> Add Manually
+                </button>
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={isParsing}
+                  style={{
+                    width: "100%", padding: "14px", backgroundColor: "#F0F9FF",
+                    border: "1.5px solid #0EA5E9", borderRadius: "10px",
+                    fontSize: "14px", fontWeight: "600", color: "#0369A1",
+                    cursor: isParsing ? "not-allowed" : "pointer", display: "flex", alignItems: "center",
+                    justifyContent: "center", gap: "8px",
+                  }}
+                >
+                  {isParsing ? <SpinnerIcon color="#0EA5E9" /> : <CloudIcon />}
+                  {isParsing ? "Scanning..." : "Scan Contract PDF"}
+                </button>
+                <input
+                  type="file"
+                  accept=".pdf"
+                  ref={fileInputRef}
+                  onChange={handleContractUpload}
+                  style={{ display: "none" }}
+                />
+              </div>
             )}
           </>
         )}

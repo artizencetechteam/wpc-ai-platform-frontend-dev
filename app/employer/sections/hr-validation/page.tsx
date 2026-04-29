@@ -749,6 +749,10 @@ function HRRecordsValidationImpl() {
                   <input type="text" value={rtwForm.nationality} onChange={(e) => setRtwForm({ ...rtwForm, nationality: e.target.value })} placeholder="e.g. Migrant, British" style={inputStyle} />
                 </div>
                 <div style={{ marginBottom: "14px" }}>
+                  <label style={lbl}>Reference Number</label>
+                  <input type="text" value={rtwForm.documentNumber} onChange={(e) => setRtwForm({ ...rtwForm, documentNumber: e.target.value })} placeholder="e.g. Passport or Visa number" style={inputStyle} />
+                </div>
+                <div style={{ marginBottom: "14px" }}>
                   <label style={lbl}>Check Date</label>
                   <input type="date" value={rtwForm.check_date} onChange={(e) => setRtwForm({ ...rtwForm, check_date: e.target.value })} style={inputStyle} />
                 </div>

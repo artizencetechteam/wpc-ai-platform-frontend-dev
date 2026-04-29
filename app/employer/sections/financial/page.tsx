@@ -318,6 +318,13 @@ function RadioRow({ value, selected, onChange, label, desc }: RadioRowProps): Re
 
 function BalanceStep({ onNext, onSave, initialBalance, isSubmitting = false }: BalanceStepProps & { isSubmitting?: boolean }): React.JSX.Element {
   const [balance, setBalance] = useState<string>(initialBalance != null ? String(initialBalance) : "");
+
+  // Sync internal state with prop if it changes (e.g. after async fetch)
+  useEffect(() => {
+    if (initialBalance != null) {
+      setBalance(String(initialBalance));
+    }
+  }, [initialBalance]);
   const num = parseFloat(balance);
   const isCompliant = !isNaN(num) && num >= MIN_BALANCE;
   const isInsufficient = !isNaN(num) && num < MIN_BALANCE && balance !== "";
@@ -622,9 +629,11 @@ function InvestmentsStep({ onNext, onPrev, onSave, initialTransactions, initialO
 
   // Sync manual balances with parent state in real-time
   useEffect(() => {
+    const closingValue = parseFloat(manualClosing) || 0;
     onSave({
       Opening_Balance: parseFloat(manualOpening) || 0,
-      Closing_Balance: parseFloat(manualClosing) || 0
+      Closing_Balance: closingValue,
+      balance: closingValue
     });
   }, [manualOpening, manualClosing]);
 
@@ -1081,7 +1090,10 @@ function FinancialPageImpl(): React.JSX.Element {
               setFinancialRecordId(finRecord.id);
               setFinancialData(prev => ({
                 ...prev,
-                balance: finRecord.current_closing_balance_gbp != null ? parseFloat(finRecord.current_closing_balance_gbp) : prev.balance,
+                // Properly fallback to Closing_Balance from hrRecord if finRecord balance is missing
+                balance: finRecord.current_closing_balance_gbp != null 
+                  ? parseFloat(finRecord.current_closing_balance_gbp) 
+                  : (prev.Closing_Balance ?? prev.balance),
                 incoming: finRecord.payment_incoming_total != null ? parseFloat(finRecord.payment_incoming_total) : prev.incoming,
                 outgoing: finRecord.payment_outgoing_total != null ? parseFloat(finRecord.payment_outgoing_total) : prev.outgoing,
                 payment_incoming_total: finRecord.payment_incoming_total != null ? parseFloat(finRecord.payment_incoming_total) : prev.payment_incoming_total,
@@ -1131,11 +1143,14 @@ function FinancialPageImpl(): React.JSX.Element {
       const token = getClientToken();
 
       try {
+        // Ensure we use the most up-to-date balance for both fields
+        const finalBalance = financialData.balance ?? financialData.Closing_Balance;
+
         // Save global transactions in HR Validation Record
         await updateHRValidationRecordAction(recordId, {
           transactions: financialData.transactions,
           Opening_Balance: financialData.Opening_Balance,
-          Closing_Balance: financialData.Closing_Balance,
+          Closing_Balance: finalBalance,
           bank_statement_url: financialData.bank_statement_url,
           payment_incoming_total: financialData.incoming,
           payment_outgoing_total: financialData.outgoing,
@@ -1143,7 +1158,7 @@ function FinancialPageImpl(): React.JSX.Element {
 
         // Prepare payload for Financial Record
         const payload = {
-          current_closing_balance_gbp: financialData.balance != null ? String(financialData.balance) : null,
+          current_closing_balance_gbp: finalBalance != null ? String(finalBalance) : null,
           total_incoming_gbp_credits: financialData.incoming != null ? String(financialData.incoming) : null,
           total_outgoing_gbp_debits: financialData.outgoing != null ? String(financialData.outgoing) : null,
           payment_incoming_total: financialData.incoming != null ? String(financialData.incoming) : null,
