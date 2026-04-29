@@ -39,6 +39,12 @@ interface Transaction {
   status: "ok" | "fail";
 }
 
+interface VerificationResult {
+  contract: string;
+  status: string;
+  match_details: string | null;
+}
+
 interface FinancialData {
   balance?: number;
   Opening_Balance?: number;
@@ -52,10 +58,13 @@ interface FinancialData {
   paymentsReflected?: string | null;
   futureEngagement?: string | null;
   bank_statement_url?: string | null;
+  contract_verification_results?: VerificationResult[] | null;
 }
 
 interface SavedContract {
   clientName?: string;
+  contract_amount?: string;
+  period?: string;
   [key: string]: unknown;
 }
 
@@ -935,12 +944,69 @@ interface SyncStatus {
   desc?: string;
 }
 
-function ContractsSyncStep({ onComplete, onPrev, savedContracts, onSave, initialPaymentsReflected, initialFutureEngagement, isSubmitting = false }: ContractsSyncStepProps & { isSubmitting?: boolean }): React.JSX.Element {
+function ContractsSyncStep({ onComplete, onPrev, savedContracts, onSave, initialPaymentsReflected, initialFutureEngagement, isSubmitting = false, financialData }: ContractsSyncStepProps & { isSubmitting?: boolean, financialData: FinancialData }): React.JSX.Element {
   const [paymentsReflected, setPaymentsReflected] = useState<string | null>(initialPaymentsReflected ?? null);
   const [futureEngagement, setFutureEngagement] = useState<string | null>(initialFutureEngagement ?? null);
+  const [isVerifying, setIsVerifying] = useState(false);
+  const [verificationResults, setVerificationResults] = useState<VerificationResult[] | null>(financialData.contract_verification_results ?? null);
 
-  const persistSelection = (payments: string | null, future: string | null): void => {
-    onSave({ paymentsReflected: payments, futureEngagement: future });
+  const persistSelection = (payments: string | null, future: string | null, results: VerificationResult[] | null = null): void => {
+    onSave({ 
+      paymentsReflected: payments, 
+      futureEngagement: future,
+      contract_verification_results: results || verificationResults
+    });
+  };
+
+  const handleVerify = async () => {
+    if (!savedContracts || savedContracts.length === 0) {
+      toast.error("No contracts found to verify.");
+      return;
+    }
+
+    setIsVerifying(true);
+    const loadingToast = toast.loading("Verifying contracts with bank statements...");
+
+    try {
+      const payload = {
+        contract_result: {
+          contracts: savedContracts.map(c => ({
+            contract_amount: c.contract_amount || "0 GBP",
+            period: c.period || "monthly"
+          })),
+          parties: Array.from(new Set(savedContracts.map(c => c.clientName).filter(Boolean)))
+        },
+        bank_result: {
+          data: {
+            transactions: financialData.transactions?.map(t => ({
+              date: t.date,
+              description: t.reference,
+              paid_in: t.type === "incoming" ? t.amount : 0,
+              paid_out: t.type === "outgoing" ? t.amount : 0
+            })) || []
+          }
+        }
+      };
+
+      const response = await axios.post("/api/verify-contracts", payload);
+      const results = response.data.verification_summary || [];
+      setVerificationResults(results);
+      
+      if (response.data.total_verified > 0) {
+        toast.success(`Successfully verified ${response.data.total_verified} contract(s)!`);
+        setPaymentsReflected("yes");
+        persistSelection("yes", futureEngagement, results);
+      } else {
+        toast.error("No matching transactions found for the contracts.");
+        persistSelection(paymentsReflected, futureEngagement, results);
+      }
+    } catch (error: any) {
+      console.error("Verification error:", error);
+      toast.error("Failed to verify contracts.");
+    } finally {
+      setIsVerifying(false);
+      toast.dismiss(loadingToast);
+    }
   };
 
   const getStatus = (): SyncStatus | null => {
@@ -955,9 +1021,25 @@ function ContractsSyncStep({ onComplete, onPrev, savedContracts, onSave, initial
 
   return (
     <div style={{ backgroundColor: "white", borderRadius: "10px", border: "1px solid #E2E8F0", padding: "28px 30px" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "6px" }}>
-        <FileIcon />
-        <h3 style={{ margin: 0, fontSize: "18px", fontWeight: "700", color: "#0F172A" }}>Step 4: Synchronize with Client Agreements</h3>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "6px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+          <FileIcon />
+          <h3 style={{ margin: 0, fontSize: "18px", fontWeight: "700", color: "#0F172A" }}>Step 4: Synchronize with Client Agreements</h3>
+        </div>
+        <button
+          onClick={handleVerify}
+          disabled={isVerifying || !savedContracts?.length}
+          style={{
+            display: "flex", alignItems: "center", gap: "8px",
+            padding: "8px 16px", backgroundColor: "#F0F9FF",
+            border: "1.5px solid #0EA5E9", borderRadius: "8px",
+            color: "#0369A1", fontSize: "13px", fontWeight: "600",
+            cursor: (isVerifying || !savedContracts?.length) ? "not-allowed" : "pointer"
+          }}
+        >
+          {isVerifying ? <SpinnerIcon color="#0EA5E9" /> : <CheckIcon />}
+          {isVerifying ? "Verifying..." : "Verify via AI"}
+        </button>
       </div>
       <p style={{ margin: "0 0 18px", fontSize: "13px", color: "#64748B" }}>Verify that contract payments are reflected in bank statements</p>
 
@@ -965,10 +1047,38 @@ function ContractsSyncStep({ onComplete, onPrev, savedContracts, onSave, initial
       {savedContracts && savedContracts.length > 0 && (
         <div style={{ backgroundColor: "#F8FAFC", borderRadius: "8px", border: "1px solid #E2E8F0", padding: "14px 18px", marginBottom: "18px" }}>
           <p style={{ margin: "0 0 10px", fontSize: "13.5px", fontWeight: "600", color: "#374151" }}>Contracts to verify:</p>
-          {savedContracts.map((c, i) => (
-            <div key={i} style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "5px" }}>
-              <FileIcon />
-              <span style={{ fontSize: "13.5px", color: "#374151" }}>{c.clientName || String(c)}</span>
+          <div style={{ display: "grid", gap: "8px" }}>
+            {savedContracts.map((c, i) => (
+              <div key={i} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 12px", backgroundColor: "white", borderRadius: "6px", border: "1px solid #E2E8F0" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                  <FileIcon />
+                  <div>
+                    <div style={{ fontSize: "13.5px", fontWeight: "600", color: "#0F172A" }}>{c.clientName || "Unknown Client"}</div>
+                    <div style={{ fontSize: "12px", color: "#64748B" }}>{c.contract_amount || "N/A"} • {c.period || "N/A"}</div>
+                  </div>
+                </div>
+                {verificationResults?.find(r => r.contract.includes(c.contract_amount || "")) && (
+                  <span style={{
+                    fontSize: "11px", fontWeight: "700", padding: "3px 8px", borderRadius: "12px",
+                    backgroundColor: verificationResults.find(r => r.contract.includes(c.contract_amount || ""))?.status === "Verified" ? "#DCFCE7" : "#FEE2E2",
+                    color: verificationResults.find(r => r.contract.includes(c.contract_amount || ""))?.status === "Verified" ? "#166534" : "#991B1B"
+                  }}>
+                    {verificationResults.find(r => r.contract.includes(c.contract_amount || ""))?.status}
+                  </span>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Verification Details */}
+      {verificationResults && verificationResults.some(r => r.match_details) && (
+        <div style={{ marginBottom: "18px", padding: "14px", backgroundColor: "#F0FDF4", borderRadius: "8px", border: "1.5px solid #86EFAC" }}>
+          <p style={{ margin: "0 0 8px", fontSize: "13px", fontWeight: "700", color: "#166534" }}>AI Match Findings:</p>
+          {verificationResults.map((r, i) => r.match_details && (
+            <div key={i} style={{ fontSize: "12.5px", color: "#166534", marginBottom: "4px" }}>
+              • <strong>{r.contract}</strong>: {r.match_details}
             </div>
           ))}
         </div>
@@ -1066,6 +1176,7 @@ function FinancialPageImpl(): React.JSX.Element {
           if (hrRes.success && hrRes.data) {
             const hrRecord = hrRes.data.find((r: any) => r.id === numId);
             if (hrRecord) {
+              setSavedContracts(hrRecord.result_complete_sections?.contracts || []);
               setFinancialData(prev => ({
                 ...prev,
                 transactions: hrRecord.transactions 
@@ -1078,7 +1189,8 @@ function FinancialPageImpl(): React.JSX.Element {
                 payment_outgoing_total: hrRecord.payment_outgoing_total ?? prev.payment_outgoing_total,
                 // Also sync Step 2 fields if they are missing
                 incoming: hrRecord.payment_incoming_total != null ? parseFloat(hrRecord.payment_incoming_total) : prev.incoming,
-                outgoing: hrRecord.payment_outgoing_total != null ? parseFloat(hrRecord.payment_outgoing_total) : prev.outgoing
+                outgoing: hrRecord.payment_outgoing_total != null ? parseFloat(hrRecord.payment_outgoing_total) : prev.outgoing,
+                contract_verification_results: hrRecord.result_complete_sections?.contract_verification_results || prev.contract_verification_results
               }));
             }
           }
@@ -1143,6 +1255,9 @@ function FinancialPageImpl(): React.JSX.Element {
       const token = getClientToken();
 
       try {
+        // Fetch latest saved results to preserve other sections
+        const currentSaved = await getSavedResults(recordId);
+
         // Ensure we use the most up-to-date balance for both fields
         const finalBalance = financialData.balance ?? financialData.Closing_Balance;
 
@@ -1154,6 +1269,10 @@ function FinancialPageImpl(): React.JSX.Element {
           bank_statement_url: financialData.bank_statement_url,
           payment_incoming_total: financialData.incoming,
           payment_outgoing_total: financialData.outgoing,
+          result_complete_sections: {
+            ...currentSaved,
+            contract_verification_results: financialData.contract_verification_results,
+          }
         }, token);
 
         // Prepare payload for Financial Record
@@ -1187,6 +1306,18 @@ function FinancialPageImpl(): React.JSX.Element {
     }
   };
 
+  async function getSavedResults(id: number) {
+    try {
+      const token = getClientToken();
+      const res = await listHRValidationRecordsAction(token);
+      if (res.success && res.data) {
+        const record = res.data.find(r => r.id === id);
+        return record?.result_complete_sections || {};
+      }
+      return {};
+    } catch { return {}; }
+  }
+
   return (
     <div style={{ fontFamily: "'Segoe UI', system-ui, sans-serif", backgroundColor: "#F1F5F9", minHeight: "100vh" }}>
       <TopNav onBack={() => router.back()} />
@@ -1217,7 +1348,18 @@ function FinancialPageImpl(): React.JSX.Element {
             isSubmitting={isSubmitting}
           />
         )}
-        {hydrated && step === "contracts" && <ContractsSyncStep onComplete={handleComplete} onPrev={() => setStep("investments")} savedContracts={savedContracts} onSave={handleSave} initialPaymentsReflected={financialData.paymentsReflected} initialFutureEngagement={financialData.futureEngagement} isSubmitting={isSubmitting} />}
+        {hydrated && step === "contracts" && (
+          <ContractsSyncStep
+            onComplete={handleComplete}
+            onPrev={() => setStep("investments")}
+            savedContracts={savedContracts}
+            onSave={handleSave}
+            initialPaymentsReflected={financialData.paymentsReflected}
+            initialFutureEngagement={financialData.futureEngagement}
+            isSubmitting={isSubmitting}
+            financialData={financialData}
+          />
+        )}
 
         <div style={{ marginTop: "20px" }}>
           {step === "balance" ? (

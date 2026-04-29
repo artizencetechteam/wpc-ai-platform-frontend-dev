@@ -30,11 +30,7 @@ interface Contract {
   text_block?: string;
 }
 
-type ContractStatus = "pass" | "fail" | "pending";
-
 interface ContractSummary {
-  passed: number;
-  failed: number;
   requireAction: number;
 }
 
@@ -67,23 +63,6 @@ const markComplete = (recordId: string | number | null, key: string): void => {
   } catch {}
 };
 
-// ─── Status helpers ───────────────────────────────────────────────────────────
-
-function getContractStatus(contract: Contract): ContractStatus {
-  if (contract.exists === "yes" && contract.aligns === "yes") return "pass";
-  if (contract.exists === "no" || contract.aligns === "no") return "fail";
-  return "pending";
-}
-
-function getSummary(contracts: Contract[]): ContractSummary {
-  let passed = 0, failed = 0;
-  contracts.forEach((c) => {
-    const s = getContractStatus(c);
-    if (s === "pass") passed++;
-    else if (s === "fail") failed++;
-  });
-  return { passed, failed, requireAction: 0 };
-}
 
 // ─── Icons ───────────────────────────────────────────────────────────────────
 
@@ -393,9 +372,8 @@ function ContractsPageImpl(): React.JSX.Element {
     } catch { return {}; }
   }
 
-  const summary = getSummary(contracts);
   const hasContracts = contracts.length > 0;
-  const hasIssues = summary.failed > 0;
+  const hasIssues = contracts.some(c => c.exists === "no" || c.aligns === "no");
   const needsContracts = businessNature === "b2b" || businessNature === "healthcare";
   const canContinue = !needsContracts || (needsContracts && hasContracts);
 
@@ -448,37 +426,21 @@ function ContractsPageImpl(): React.JSX.Element {
             {hasContracts && (
               <div style={{ backgroundColor: "white", borderRadius: "10px", border: "1px solid #E2E8F0", padding: "20px 24px", marginBottom: "14px" }}>
                 <h3 style={{ margin: "0 0 16px", fontSize: "15px", fontWeight: "700", color: "#0F172A" }}>Added Contracts</h3>
-                <div style={{ display: "grid", gridTemplateColumns: "1.5fr 1fr 1fr 1fr 1fr 1fr 1fr", padding: "0 4px 10px", borderBottom: "1px solid #F1F5F9" }}>
-                  {["Client Name", "Amount", "Period", "Exists", "Aligns", "Doc", "Status"].map((h) => (
+                <div style={{ display: "grid", gridTemplateColumns: "1.5fr 1fr 1fr 1fr 1fr 1fr", padding: "0 4px 10px", borderBottom: "1px solid #F1F5F9" }}>
+                  {["Client Name", "Amount", "Period", "Exists", "Aligns", "Doc"].map((h) => (
                     <div key={h} style={{ fontSize: "12.5px", color: "#94A3B8", fontWeight: "500" }}>{h}</div>
                   ))}
                 </div>
-                {contracts.map((c) => {
-                  const status = getContractStatus(c);
-                  return (
-                    <div key={c.id} style={{ display: "grid", gridTemplateColumns: "1.5fr 1fr 1fr 1fr 1fr 1fr 1fr", padding: "13px 4px", borderBottom: "1px solid #F8FAFC", alignItems: "center" }}>
-                      <div style={{ fontSize: "14px", color: "#0F172A", fontWeight: "500" }}>{c.clientName}</div>
-                      <div style={{ fontSize: "13px", color: "#64748B" }}>{c.contract_amount || "—"}</div>
-                      <div style={{ fontSize: "13px", color: "#64748B" }}>{c.period || "—"}</div>
-                      <div>{c.exists === "yes" ? <GreenCheck /> : <YellowWarn />}</div>
-                      <div>{c.aligns === "yes" ? <GreenCheck /> : c.aligns === "no" ? <YellowWarn /> : <span style={{ color: "#94A3B8" }}>—</span>}</div>
-                      <div style={{ fontSize: "14px", color: "#94A3B8" }}>{c.document ? "✓" : "—"}</div>
-                      <div>
-                        {status === "pass" ? (
-                          <span style={{ display: "inline-flex", alignItems: "center", gap: "5px", padding: "4px 12px", borderRadius: "20px", fontSize: "12px", fontWeight: "600", backgroundColor: "#0852C9", color: "white" }}>
-                            <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><circle cx="6" cy="6" r="5" stroke="white" strokeWidth="1.2" fill="none" /><path d="M3.5 6l2 2L8.5 4" stroke="white" strokeWidth="1.2" strokeLinecap="round" /></svg>
-                            Pass
-                          </span>
-                        ) : (
-                          <span style={{ display: "inline-flex", alignItems: "center", gap: "5px", padding: "4px 12px", borderRadius: "20px", fontSize: "12px", fontWeight: "600", backgroundColor: "#DC2626", color: "white" }}>
-                            <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M6 1.5L1 10h10L6 1.5z" stroke="white" strokeWidth="1.1" fill="none" /><path d="M6 5.5v2M6 9v.3" stroke="white" strokeWidth="1" strokeLinecap="round" /></svg>
-                            Fail
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
+                {contracts.map((c) => (
+                  <div key={c.id} style={{ display: "grid", gridTemplateColumns: "1.5fr 1fr 1fr 1fr 1fr 1fr", padding: "13px 4px", borderBottom: "1px solid #F8FAFC", alignItems: "center" }}>
+                    <div style={{ fontSize: "14px", color: "#0F172A", fontWeight: "500" }}>{c.clientName}</div>
+                    <div style={{ fontSize: "13px", color: "#64748B" }}>{c.contract_amount || "—"}</div>
+                    <div style={{ fontSize: "13px", color: "#64748B" }}>{c.period || "—"}</div>
+                    <div>{c.exists === "yes" ? <GreenCheck /> : <YellowWarn />}</div>
+                    <div>{c.aligns === "yes" ? <GreenCheck /> : c.aligns === "no" ? <YellowWarn /> : <span style={{ color: "#94A3B8" }}>—</span>}</div>
+                    <div style={{ fontSize: "14px", color: "#94A3B8" }}>{c.document ? "✓" : "—"}</div>
+                  </div>
+                ))}
               </div>
             )}
 
@@ -524,30 +486,6 @@ function ContractsPageImpl(): React.JSX.Element {
             )}
           </>
         )}
-
-        {/* Summary bar */}
-        {hasContracts && !showForm && (
-          <div style={{
-            backgroundColor: "white", borderRadius: "10px",
-            border: `1.5px solid ${hasIssues ? "#FCA5A5" : "#E2E8F0"}`,
-            padding: "16px 20px", marginBottom: "14px",
-            display: "flex", justifyContent: "space-between", alignItems: "center",
-          }}>
-            <div>
-              <div style={{ fontSize: "14px", fontWeight: "700", color: "#0F172A" }}>Contract Validation Summary</div>
-              <div style={{ fontSize: "13px", color: "#64748B", marginTop: "3px" }}>
-                {summary.passed} passed, {summary.failed} failed, {summary.requireAction} require action
-              </div>
-            </div>
-            <span style={{
-              padding: "5px 14px", borderRadius: "20px", fontSize: "12.5px", fontWeight: "700",
-              backgroundColor: hasIssues ? "#DC2626" : "#0852C9", color: "white",
-            }}>
-              {hasIssues ? "Issues Found" : "All Valid"}
-            </span>
-          </div>
-        )}
-
         {/* Continue */}
         <button
           onClick={canContinue && !isSubmitting ? handleContinue : undefined}
