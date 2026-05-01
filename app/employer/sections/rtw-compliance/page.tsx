@@ -96,7 +96,7 @@ function NoMigrantScreen({ onContinue }: { onContinue: () => void }) {
             display: "flex", alignItems: "center", gap: "8px"
           }}
         >
-          Continue to Pension Compliance
+          Continue to Bank Statement
         </button>
       </div>
     </div>
@@ -401,7 +401,7 @@ function RTWVerificationScreen({ migrants, onBackToStaffList, onContinue, onSave
               }}
             >
               {isSubmitting && <SpinnerIcon color="#fff" />}
-              {isSubmitting ? "Processing..." : "Continue to Pension Compliance"}
+              {isSubmitting ? "Processing..." : "Continue to Bank Statement"}
             </button>
           )}
         </div>
@@ -504,7 +504,7 @@ function RTWComplianceImpl() {
   };
 
   const handleBack = () => router.push(`/employer/sections/hr-validation?recordId=${recordId}`);
-  const handleContinueToPension = async () => {
+  const handleContinueToBank = async () => {
     markRTWComplete();
 
     if (recordId) {
@@ -523,7 +523,7 @@ function RTWComplianceImpl() {
       }
     }
 
-    router.push(`/employer/sections/pension?recordId=${recordId}`);
+    router.push(`/employer/sections/bank-statement?recordId=${recordId}`);
   };
 
   async function getHRRecord(id: number) {
@@ -544,10 +544,10 @@ function RTWComplianceImpl() {
         ? <RTWVerificationScreen 
             migrants={migrants} 
             onBackToStaffList={handleBack} 
-            onContinue={handleContinueToPension} 
+            onContinue={handleContinueToBank} 
             onSaveEmployee={handleSaveEmployee}
           />
-        : <NoMigrantScreen onContinue={handleContinueToPension} />
+        : <NoMigrantScreen onContinue={handleContinueToBank} />
       )}
     </div>
   );

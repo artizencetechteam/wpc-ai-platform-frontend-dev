@@ -335,50 +335,7 @@ function CompanyPageImpl() {
             setCompanyName(srvName);
             sessionStorage.setItem(`company_name_${recordId}`, srvName);
           }
-          if (record.bank_name) {
-            srvBank = record.bank_name;
-            setBankName(srvBank);
-            sessionStorage.setItem(`bank_name_${recordId}`, srvBank);
-          } else {
-            setBankName("Other Banks");
-          }
-          if (record.bank_statement_url) {
-            setBankStatementUrl(record.bank_statement_url);
-          }
         }
-
-        // Fallback: Retrieve from storage if server didn't have it
-        const savedName = sessionStorage.getItem(`company_name_${recordId}`);
-        if (savedName && !srvName) setCompanyName(savedName);
-
-        const savedBank = sessionStorage.getItem(`bank_name_${recordId}`);
-        if (savedBank && !srvBank) setBankName(savedBank);
-        else if (!srvBank) setBankName("Other Banks");
-
-        // --- NEW: Hydrate Transactions and Balances from server ---
-        if (record) {
-          if (record.transactions) {
-            const txs = typeof record.transactions === "string" ? JSON.parse(record.transactions) : record.transactions;
-            setTransactions(txs);
-          }
-          if (record.Opening_Balance) setManualOpening(String(record.Opening_Balance));
-          if (record.Closing_Balance) setManualClosing(String(record.Closing_Balance));
-          if (record.payment_incoming_total !== undefined) setPaymentIncomingTotal(record.payment_incoming_total);
-          if (record.payment_outgoing_total !== undefined) setPaymentOutgoingTotal(record.payment_outgoing_total);
-        }
-
-        // Fetch Financial Record for balances
-        const finRes = await listFinancialRecordsAction(token);
-        if (finRes.success && finRes.data) {
-          const finRecord = finRes.data.find((fr) => fr.HRValidationRecord_id === recordId);
-          if (finRecord) {
-            if (finRecord.current_closing_balance_gbp) {
-              setManualClosing(String(finRecord.current_closing_balance_gbp));
-            }
-          }
-        }
-
-        // Manual balances and transactions are now hydrated solely from the server/API logic above
       }
     } catch (e) {
       console.error("initHRRecord error:", e);
@@ -393,25 +350,15 @@ function CompanyPageImpl() {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleContinue = async () => {
-    if (!companyName.trim() || !bankName) return;
+    if (!companyName.trim()) return;
     setIsSubmitting(true);
     if (hrRecordId) {
       sessionStorage.setItem(`company_name_${hrRecordId}`, companyName.trim());
-      sessionStorage.setItem(`bank_name_${hrRecordId}`, bankName);
-
-      // Final sync of data is handled by the server update below
 
       // Save to server
       const token = getClientToken();
       await updateHRValidationRecordAction(hrRecordId, {
         company_name: companyName.trim(),
-        bank_name: bankName,
-        transactions: transactions,
-        Opening_Balance: manualOpening,
-        Closing_Balance: manualClosing,
-        bank_statement_url: bankStatementUrl,
-        payment_incoming_total: paymentIncomingTotal,
-        payment_outgoing_total: paymentOutgoingTotal,
       }, token);
 
       // Mark company step as complete in progress map
@@ -427,7 +374,7 @@ function CompanyPageImpl() {
     <div style={{ fontFamily: "'Segoe UI', system-ui, sans-serif", backgroundColor: "#F1F5F9", minHeight: "100vh" }}>
       <HRValidationTabs currentTabId="company" hrRecordId={hrRecordId} />
 
-      <div style={{ maxWidth: transactions.length > 0 ? "1060px" : "860px", margin: "60px auto", padding: "0 24px", transition: "max-width 0.3s ease" }}>
+      <div style={{ maxWidth: "860px", margin: "60px auto", padding: "0 24px", transition: "max-width 0.3s ease" }}>
         {apiError && (
           <div style={{ marginBottom: "16px", padding: "12px 16px", backgroundColor: "#FEF2F2", border: "1px solid #FECACA", borderRadius: "8px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
             <p style={{ margin: 0, fontSize: "13px", color: "#DC2626" }}>⚠ {apiError}</p>
@@ -438,7 +385,7 @@ function CompanyPageImpl() {
         {loading ? (
           <div style={{ display: "flex", justifyContent: "center", padding: "100px" }}><SpinnerIcon /></div>
         ) : (
-          <div style={{ backgroundColor: "#F8FAFC", borderRadius: "14px", border: "1.5px solid #E2E8F0", padding: "40px", maxWidth: transactions.length > 0 ? "1000px" : "600px", margin: "0 auto", boxShadow: "0 4px 6px -1px rgba(0,0,0,0.05)", transition: "max-width 0.3s ease" }}>
+          <div style={{ backgroundColor: "#F8FAFC", borderRadius: "14px", border: "1.5px solid #E2E8F0", padding: "40px", maxWidth: "600px", margin: "0 auto", boxShadow: "0 4px 6px -1px rgba(0,0,0,0.05)", transition: "max-width 0.3s ease" }}>
             <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "8px" }}>
               <div style={{ backgroundColor: "#EFF6FF", padding: "8px", borderRadius: "8px" }}>
                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#0852C9" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -472,250 +419,13 @@ function CompanyPageImpl() {
               />
             </div>
 
-            <div style={{ marginBottom: "24px" }}>
-              <label style={{ display: "block", fontSize: "14px", fontWeight: "600", color: "#374151", marginBottom: "8px" }}>
-                Bank Name *
-              </label>
-              <select
-                value={bankName}
-                onChange={(e) => setBankName(e.target.value)}
-                style={{
-                  width: "100%", padding: "12px 16px", borderRadius: "10px",
-                  border: "1.5px solid #D1D5DB", fontSize: "15px", outline: "none",
-                  boxSizing: "border-box", color: "#0F172A", backgroundColor: "white",
-                  transition: "border-color 0.2s",
-                  cursor: "pointer"
-                }}
-                onFocus={(e) => e.target.style.borderColor = "#0852C9"}
-                onBlur={(e) => e.target.style.borderColor = "#D1D5DB"}
-              >
-                <option value="">Select a Bank...</option>
-                <option value="Other Banks">Other Banks</option>
-                <option value="NATWEST">NATWEST</option>
-                <option value="SANTANDER">SANTANDER</option>
-                <option value="VIRGIN">VIRGIN</option>
-              </select>
-            </div>
-
-            {/* Opening & Closing Balance */}
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px", marginBottom: "24px" }}>
-              <div>
-                <label style={{ display: "block", fontSize: "14px", fontWeight: "600", color: "#374151", marginBottom: "8px" }}>
-                  Opening Balance
-                  <span style={{ marginLeft: "6px", fontSize: "12px", fontWeight: "400", color: "#94A3B8" }}>(auto-filled on upload)</span>
-                </label>
-                <div style={{ position: "relative" }}>
-                  <span style={{ position: "absolute", left: "12px", top: "50%", transform: "translateY(-50%)", fontSize: "15px", color: "#64748B", pointerEvents: "none" }}>£</span>
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={manualOpening}
-                    onChange={(e) => setManualOpening(e.target.value)}
-                    placeholder="0.00"
-                    style={{
-                      width: "100%", padding: "12px 16px 12px 28px", borderRadius: "10px",
-                      border: "1.5px solid #D1D5DB", fontSize: "15px", outline: "none",
-                      boxSizing: "border-box", color: "#0F172A", backgroundColor: manualOpening ? "#F0FDF4" : "white",
-                      transition: "border-color 0.2s, background-color 0.2s",
-                    }}
-                    onFocus={(e) => e.target.style.borderColor = "#0852C9"}
-                    onBlur={(e) => e.target.style.borderColor = "#D1D5DB"}
-                  />
-                </div>
-              </div>
-              <div>
-                <label style={{ display: "block", fontSize: "14px", fontWeight: "600", color: "#374151", marginBottom: "8px" }}>
-                  Closing Balance
-                  <span style={{ marginLeft: "6px", fontSize: "12px", fontWeight: "400", color: "#94A3B8" }}>(auto-filled on upload)</span>
-                </label>
-                <div style={{ position: "relative" }}>
-                  <span style={{ position: "absolute", left: "12px", top: "50%", transform: "translateY(-50%)", fontSize: "15px", color: "#64748B", pointerEvents: "none" }}>£</span>
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={manualClosing}
-                    onChange={(e) => setManualClosing(e.target.value)}
-                    placeholder="0.00"
-                    style={{
-                      width: "100%", padding: "12px 16px 12px 28px", borderRadius: "10px",
-                      border: "1.5px solid #D1D5DB", fontSize: "15px", outline: "none",
-                      boxSizing: "border-box", color: "#0F172A", backgroundColor: manualClosing ? "#F0FDF4" : "white",
-                      transition: "border-color 0.2s, background-color 0.2s",
-                    }}
-                    onFocus={(e) => e.target.style.borderColor = "#0852C9"}
-                    onBlur={(e) => e.target.style.borderColor = "#D1D5DB"}
-                  />
-                </div>
-              </div>
-            </div>
-
-            <div style={{ marginBottom: transactions.length > 0 ? "12px" : "24px" }}>
-              <label style={{ display: "block", fontSize: "14px", fontWeight: "600", color: "#374151", marginBottom: "8px" }}>
-                Upload Bank Statement
-              </label>
-              <input
-                type="file"
-                accept=".pdf"
-                ref={fileInputRef}
-                onChange={handleFileUpload}
-                style={{ display: "none" }}
-              />
-              <button
-                onClick={() => fileInputRef.current?.click()}
-                disabled={isParsing}
-                style={{
-                  width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: "8px",
-                  padding: "12px 16px", backgroundColor: "#F0F9FF", border: "1.5px dashed #0EA5E9",
-                  borderRadius: "10px", color: "#0369A1", fontSize: "14.5px", fontWeight: "600",
-                  cursor: isParsing ? "not-allowed" : "pointer", transition: "all 0.2s"
-                }}
-              >
-                {isParsing ? (
-                  <>
-                    <SpinnerIcon color="#0EA5E9" />
-                    Analyzing statement...
-                  </>
-                ) : (
-                  <>
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M17.5 19L19 19C21.2091 19 23 17.2091 23 15C23 12.7909 21.2091 11 19 11C18.8296 11 18.6625 11.0107 18.4988 11.0317C17.7412 8.14811 15.1182 6 12 6C9.11584 6 6.6247 7.8258 5.67232 10.3957C3.12061 10.7483 1 12.9163 1 15.5C1 18.5376 3.46243 21 6.5 21L8 21" />
-                      <path d="M12 11V21M12 11L9 14M12 11L15 14" />
-                    </svg>
-                    {uploadedFileName ? `Re-upload Statement (${uploadedFileName})` : "Upload Bank Statement PDF"}
-                  </>
-                )}
-              </button>
-            </div>
-
-            {transactions.length > 0 && (
-              <div style={{ marginBottom: "24px" }}>
-                <div style={{ display: "flex", flexDirection: "column", gap: "12px", marginBottom: "16px" }}>
-                  <h3 style={{ margin: 0, fontSize: "15px", fontWeight: "600", color: "#0F172A" }}>Parsed Transactions</h3>
-                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: "10px" }}>
-                    <div style={{ position: "relative" }}>
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#9CA3AF" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ position: "absolute", left: "10px", top: "50%", transform: "translateY(-50%)" }}>
-                        <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
-                      </svg>
-                      <input type="text" placeholder="Date..." value={searchDate} onChange={(e) => setSearchDate(e.target.value)} style={{ padding: "8px 12px 8px 30px", border: "1.5px solid #E2E8F0", borderRadius: "6px", fontSize: "13px", outline: "none", width: "100%", boxSizing: "border-box" }} />
-                    </div>
-                    <div style={{ position: "relative" }}>
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#9CA3AF" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ position: "absolute", left: "10px", top: "50%", transform: "translateY(-50%)" }}>
-                        <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
-                      </svg>
-                      <input type="text" placeholder="Amount..." value={searchAmount} onChange={(e) => setSearchAmount(e.target.value)} style={{ padding: "8px 12px 8px 30px", border: "1.5px solid #E2E8F0", borderRadius: "6px", fontSize: "13px", outline: "none", width: "100%", boxSizing: "border-box" }} />
-                    </div>
-                    <div style={{ position: "relative" }}>
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#9CA3AF" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ position: "absolute", left: "10px", top: "50%", transform: "translateY(-50%)" }}>
-                        <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
-                      </svg>
-                      <input type="text" placeholder="Type..." value={searchType} onChange={(e) => setSearchType(e.target.value)} style={{ padding: "8px 12px 8px 30px", border: "1.5px solid #E2E8F0", borderRadius: "6px", fontSize: "13px", outline: "none", width: "100%", boxSizing: "border-box" }} />
-                    </div>
-                    <div style={{ position: "relative" }}>
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#9CA3AF" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ position: "absolute", left: "10px", top: "50%", transform: "translateY(-50%)" }}>
-                        <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
-                      </svg>
-                      <input type="text" placeholder="Reference / Note..." value={searchReference} onChange={(e) => setSearchReference(e.target.value)} style={{ padding: "8px 12px 8px 30px", border: "1.5px solid #E2E8F0", borderRadius: "6px", fontSize: "13px", outline: "none", width: "100%", boxSizing: "border-box" }} />
-                    </div>
-                  </div>
-                </div>
-
-                <div style={{ border: "1px solid #E2E8F0", borderRadius: "8px", overflow: "hidden" }}>
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1.2fr 1fr 2fr 1fr 1fr", padding: "10px 14px", backgroundColor: "#F8FAFC", borderBottom: "1px solid #E2E8F0" }}>
-                    {["Date", "Amount", "Type", "Reference", "Status", "Actions"].map((h) => <div key={h} style={{ fontSize: "12.5px", color: "#64748B", fontWeight: "600" }}>{h}</div>)}
-                  </div>
-                  <div style={{ maxHeight: "400px", overflowY: "auto" }}>
-                    {transactions.filter(t => {
-                      if (searchDate && (!t.date || !t.date.toLowerCase().includes(searchDate.toLowerCase()))) return false;
-                      if (searchAmount && !String(t.amount).includes(searchAmount)) return false;
-                      if (searchType && !t.type.toLowerCase().includes(searchType.toLowerCase())) return false;
-                      if (searchReference && !t.reference.toLowerCase().includes(searchReference.toLowerCase())) return false;
-                      return true;
-                    }).map((t) => {
-                      const isEditing = editingId === t.id;
-                      return (
-                        <div key={t.id} style={{ display: "grid", gridTemplateColumns: "1fr 1.2fr 1fr 2fr 1fr 1fr", padding: "12px 4px", borderBottom: "1px solid #F1F5F9", alignItems: "center" }}>
-                          {isEditing ? (
-                            <>
-                              <div style={{ fontSize: "13px", color: "#374151", padding: "4px" }}>{editValues?.date || "—"}</div>
-                              <div><input type="number" value={editValues?.amount} onChange={(e) => setEditValues((prev: any) => prev ? { ...prev, amount: parseFloat(e.target.value) || 0 } : null)} style={{ ...inputStyle, padding: "4px 8px" }} /></div>
-                              <div>
-                                <select value={editValues?.type} onChange={(e) => setEditValues((prev: any) => prev ? { ...prev, type: e.target.value as "incoming" | "outgoing" } : null)} style={{ ...inputStyle, padding: "4px 8px" }}>
-                                  <option value="incoming">Incoming</option>
-                                  <option value="outgoing">Outgoing</option>
-                                </select>
-                              </div>
-                              <div><input type="text" value={editValues?.reference} onChange={(e) => setEditValues((prev: any) => prev ? { ...prev, reference: e.target.value } : null)} style={{ ...inputStyle, padding: "4px 8px" }} /></div>
-                              <div />
-                              <div style={{ display: "flex", gap: "8px" }}>
-                                <button onClick={handleEditSave} title="Save" style={iconBtn}><CheckIcon /></button>
-                                <button onClick={handleEditCancel} title="Cancel" style={iconBtn}><XIcon /></button>
-                              </div>
-                            </>
-                          ) : (
-                            <>
-                              <div style={{ fontSize: "13px", color: "#374151", padding: "4px", fontVariantNumeric: "tabular-nums" }}>
-                                {t.date || "—"}
-                              </div>
-                              <div
-                                onClick={() => handleEditStart(t)}
-                                title="Click to edit"
-                                style={{ fontSize: "14px", color: "#0F172A", fontWeight: "500", cursor: "pointer", padding: "4px", borderRadius: "4px", transition: "background 0.2s" }}
-                                onMouseOver={(e) => e.currentTarget.style.backgroundColor = "#F1F5F9"}
-                                onMouseOut={(e) => e.currentTarget.style.backgroundColor = "transparent"}
-                              >
-                                £{t.amount.toLocaleString()}
-                                {t.amount >= 2000 && (
-                                  <span style={{ marginLeft: "8px", fontSize: "10px", backgroundColor: "#F0F9FF", color: "#0369A1", padding: "2px 6px", borderRadius: "4px", border: "1px solid #B9E6FE", verticalAlign: "middle" }}>
-                                    Large
-                                  </span>
-                                )}
-                              </div>
-                              <div
-                                onClick={() => handleEditStart(t)}
-                                title="Click to edit"
-                                style={{ fontSize: "13.5px", color: "#374151", textTransform: "capitalize", cursor: "pointer", padding: "4px", borderRadius: "4px", transition: "background 0.2s" }}
-                                onMouseOver={(e) => e.currentTarget.style.backgroundColor = "#F1F5F9"}
-                                onMouseOut={(e) => e.currentTarget.style.backgroundColor = "transparent"}
-                              >
-                                {t.type}
-                              </div>
-                              <div
-                                onClick={() => handleEditStart(t)}
-                                title="Click to edit"
-                                style={{ fontSize: "13.5px", color: "#374151", cursor: "pointer", padding: "4px", borderRadius: "4px", transition: "background 0.2s" }}
-                                onMouseOver={(e) => e.currentTarget.style.backgroundColor = "#F1F5F9"}
-                                onMouseOut={(e) => e.currentTarget.style.backgroundColor = "transparent"}
-                              >
-                                {t.reference}
-                              </div>
-                              <div>
-                                <span style={{ display: "inline-flex", alignItems: "center", gap: "5px", padding: "3px 12px", borderRadius: "20px", fontSize: "12px", fontWeight: "600", backgroundColor: t.status === "ok" ? "#0852C9" : "#DC2626", color: "white" }}>
-                                  <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><circle cx="5" cy="5" r="4" stroke="white" strokeWidth="1.2" fill="none" />{t.status === "ok" ? <path d="M3 5l1.5 1.5L7 3.5" stroke="white" strokeWidth="1.2" strokeLinecap="round" /> : <path d="M3.5 3.5l3 3M6.5 3.5l-3 3" stroke="white" strokeWidth="1.2" strokeLinecap="round" />}</svg>
-                                  {t.status === "ok" ? "OK" : "Flag"}
-                                </span>
-                              </div>
-                              <div style={{ display: "flex", gap: "8px" }}>
-                                <button onClick={() => handleDelete(t.id)} title="Delete" style={{ ...iconBtn, color: "#DC2626" }}><TrashIcon /></button>
-                              </div>
-                            </>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              </div>
-            )}
-
             <button
               onClick={handleContinue}
-              disabled={isSubmitting || !companyName.trim() || !bankName}
+              disabled={isSubmitting || !companyName.trim()}
               style={{
                 width: "100%", padding: "14px", borderRadius: "10px", border: "none",
-                backgroundColor: (isSubmitting || !companyName.trim() || !bankName) ? "#93ABDE" : "#0852C9", color: "white",
-                fontSize: "15px", fontWeight: "600", cursor: (isSubmitting || !companyName.trim() || !bankName) ? "not-allowed" : "pointer",
+                backgroundColor: (isSubmitting || !companyName.trim()) ? "#93ABDE" : "#0852C9", color: "white",
+                fontSize: "15px", fontWeight: "600", cursor: (isSubmitting || !companyName.trim()) ? "not-allowed" : "pointer",
                 transition: "background-color 0.2s",
                 display: "flex", alignItems: "center", justifyContent: "center", gap: "8px"
               }}
