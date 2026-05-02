@@ -98,7 +98,7 @@ clientApi.interceptors.request.use(
         try {
 
           const refreshResponse = await axios.post(
-            `${process.env.NEXT_PUBLIC_API_URL}/api/auth/refresh/`,
+            `${process.env.NEXT_PUBLIC_API_URL}/accounts/token/refresh/`,
             { refresh: refreshToken }
           );
 
@@ -167,7 +167,7 @@ clientApi.interceptors.response.use(
         if (!refreshToken) throw new Error("No refresh token");
 
         const refreshResponse = await axios.post(
-          `${process.env.NEXT_PUBLIC_API_URL}/api/auth/refresh/`,
+          `${process.env.NEXT_PUBLIC_API_URL}/accounts/token/refresh/`,
           { refresh: refreshToken }
         );
 
