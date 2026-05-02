@@ -7,7 +7,7 @@ import { toast } from "react-hot-toast";
 import {
   listHRValidationRecordsAction,
   updateHRValidationRecordAction,
-  listFinancialRecordsAction,
+  listEmployeesAction,
 } from "@/app/employer/sections/action/action";
 import HRValidationTabs from "../_components/HRValidationTabs";
 import { getClientToken } from "@/app/employer/sections/company/page";
@@ -87,13 +87,17 @@ function BankStatementImpl() {
   const [bankName, setBankName] = useState("Other Banks");
 
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [isParsing, setIsParsing] = useState(false);
+  // Step 1: upload state
+  const [isUploading, setIsUploading] = useState(false);
   const [uploadedFileName, setUploadedFileName] = useState("");
+  const [bankStatementUrl, setBankStatementUrl] = useState("");
+  // Step 2: AI analysis state
+  const [isAnalysing, setIsAnalysing] = useState(false);
   const [manualOpening, setManualOpening] = useState("");
   const [manualClosing, setManualClosing] = useState("");
   const [paymentIncomingTotal, setPaymentIncomingTotal] = useState<number | null>(null);
   const [paymentOutgoingTotal, setPaymentOutgoingTotal] = useState<number | null>(null);
-
+  const [employees, setEmployees] = useState<any[]>([]);
   const [transactions, setTransactions] = useState<any[]>([]);
   const [searchDate, setSearchDate] = useState("");
   const [searchAmount, setSearchAmount] = useState("");
@@ -101,7 +105,6 @@ function BankStatementImpl() {
   const [searchReference, setSearchReference] = useState("");
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editValues, setEditValues] = useState<any | null>(null);
-  const [bankStatementUrl, setBankStatementUrl] = useState("");
 
   useEffect(() => {
     initHRRecord();
@@ -130,6 +133,12 @@ function BankStatementImpl() {
 
       setHrRecordId(recordId);
       if (recordId !== null) {
+        // Fetch employees to pass their names to the AI parser
+        const empRes = await listEmployeesAction(recordId, token);
+        if (empRes.success) {
+          setEmployees(empRes.data || []);
+        }
+
         const record = records.find((r) => r.id === recordId);
         if (record) {
           if (record.bank_name) setBankName(record.bank_name);
@@ -139,18 +148,11 @@ function BankStatementImpl() {
             setTransactions(txs);
           }
           if (record.Opening_Balance) setManualOpening(String(record.Opening_Balance));
-          if (record.Closing_Balance) setManualClosing(String(record.Closing_Balance));
+          if (record.Closing_Balance != null && record.Closing_Balance !== "" && record.Closing_Balance !== 0) {
+            setManualClosing(String(record.Closing_Balance));
+          }
           if (record.payment_incoming_total !== undefined) setPaymentIncomingTotal(record.payment_incoming_total);
           if (record.payment_outgoing_total !== undefined) setPaymentOutgoingTotal(record.payment_outgoing_total);
-        }
-
-        // Fetch Financial Record for balances if available
-        const finRes = await listFinancialRecordsAction(token);
-        if (finRes.success && finRes.data) {
-          const finRecord = finRes.data.find((fr) => fr.HRValidationRecord_id === recordId);
-          if (finRecord && finRecord.current_closing_balance_gbp && !manualClosing) {
-            setManualClosing(String(finRecord.current_closing_balance_gbp));
-          }
         }
       }
     } catch (e) {
@@ -161,41 +163,88 @@ function BankStatementImpl() {
     }
   }
 
+  // ── Step 1: Upload PDF → Cloudflare R2 ──────────────────────────────────────
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    setManualOpening("");
-    setManualClosing("");
-
-    const formData = new FormData();
-    formData.append("file", file);
-    formData.append("bank_name", bankName);
-    formData.append("manual_opening", "");
-    formData.append("manual_closing", "");
-    formData.append("employee_name", "string");
-
-    setIsParsing(true);
-    const loadingToast = toast.loading("Parsing bank statement...");
-
+    setIsUploading(true);
+    const loadingToast = toast.loading("Uploading to secure storage...");
     try {
-      const response = await axios.post("/api/extract-bank-statement", formData);
+      // 1a. Get presigned URL from our proxy
+      const presignRes = await axios.post("/api/upload-presign", {
+        fileName: `Bank statements/${file.name}`,
+        fileType: file.type || "application/pdf",
+      });
+      const { presignedUrl, publicUrl } = presignRes.data;
+
+      // 1b. PUT directly to Cloudflare R2
+      await axios.put(presignedUrl, file, {
+        headers: { "Content-Type": file.type || "application/pdf" },
+      });
+
+      setUploadedFileName(file.name);
+      setBankStatementUrl(publicUrl);
+      // Clear any previous analysis results
+      setTransactions([]);
+      setManualOpening("");
+      setManualClosing("");
+      setPaymentIncomingTotal(null);
+      setPaymentOutgoingTotal(null);
+
+      // 1c. Immediately persist the URL to the database
+      if (hrRecordId) {
+        const token = getClientToken();
+        await updateHRValidationRecordAction(hrRecordId, {
+          bank_statement_url: publicUrl,
+        }, token);
+      }
+
+      toast.success("File uploaded successfully! Starting AI Analysis...");
+      setIsUploading(false);
+      toast.dismiss(loadingToast);
+
+      // 1d. Automatically trigger AI analysis
+      await handleRunAnalysis(publicUrl);
+    } catch (error: any) {
+      console.error("Upload error:", error);
+      toast.error(error.response?.data?.error || "Failed to upload file.");
+      setIsUploading(false);
+      toast.dismiss(loadingToast);
+    } finally {
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  };
+
+  // ── Step 2: Run AI Analysis using stored URL ─────────────────────────────────
+  const handleRunAnalysis = async (urlOverride?: string) => {
+    const urlToUse = urlOverride || bankStatementUrl;
+    if (!urlToUse) return;
+
+    setIsAnalysing(true);
+    const loadingToast = toast.loading("Running AI analysis...");
+    try {
+      const response = await axios.post("/api/parse-bank-statement", {
+        file_url: urlToUse,
+        employee_name: employees.map((e) => e.employee_full_name),
+      });
       const resData = response.data;
+      // Support the new { bank_statement: { all_transactions: [...] } } structure
+      const bankStatement = resData.bank_statement || {};
       const extractionResult = resData.data || resData || {};
-      const fetchedTransactions = extractionResult.transactions || [];
+      const fetchedTransactions = bankStatement.all_transactions || extractionResult.transactions || [];
 
       if (!Array.isArray(fetchedTransactions)) {
-        toast.error("Invalid response format from bank statement parser.");
+        toast.error("Unexpected response from AI parser.");
         return;
       }
 
       const mapped = fetchedTransactions.map((t: any, idx: number) => {
         const hasPaidOut = t.paid_out !== null && t.paid_out !== undefined && t.paid_out !== "" && String(t.paid_out).trim() !== "0";
-        const hasPaidIn = t.paid_in !== null && t.paid_in !== undefined && t.paid_in !== "" && String(t.paid_in).trim() !== "0";
+        const hasPaidIn  = t.paid_in  !== null && t.paid_in  !== undefined && t.paid_in  !== "" && String(t.paid_in).trim()  !== "0";
         const amtValue = hasPaidOut ? t.paid_out : (hasPaidIn ? t.paid_in : (t.amount || t.value || 0));
-        const amt = typeof amtValue === 'string' ? parseFloat(amtValue.replace(/[^\d.-]/g, '')) : amtValue;
-        let isIncoming = hasPaidIn || (!hasPaidOut && (t.type === "credit" || t.direction === "in" || (typeof amt === 'number' && amt >= 0)));
-
+        const amt = typeof amtValue === "string" ? parseFloat(amtValue.replace(/[^\d.-]/g, "")) : amtValue;
+        const isIncoming = hasPaidIn || (!hasPaidOut && (t.type === "credit" || t.direction === "in" || (typeof amt === "number" && amt >= 0)));
         return {
           id: Date.now() + idx,
           date: formatDate(t.date),
@@ -203,36 +252,32 @@ function BankStatementImpl() {
           reference: t.description || t.reference || t.memo || "Unknown",
           type: isIncoming ? "incoming" : "outgoing",
           status: getTransactionStatus(t.description || t.reference || t.memo || ""),
+          flags: t.flags || {}
         };
       });
 
-      const extractedOpening = extractionResult.opening_balance ?? extractionResult.openingBalance ?? null;
-      const extractedClosing = extractionResult.closing_balance ?? extractionResult.closingBalance ?? null;
+      const extractedOpening = bankStatement.opening_balance ?? extractionResult.opening_balance ?? extractionResult.openingBalance ?? null;
+      const extractedClosing = bankStatement.closing_balance ?? extractionResult.closing_balance ?? extractionResult.closingBalance ?? null;
       if (extractedOpening !== null) setManualOpening(String(extractedOpening));
       if (extractedClosing !== null) setManualClosing(String(extractedClosing));
 
-      const extractedPaidIn = extractionResult.total_paid_in ?? null;
-      const extractedPaidOut = extractionResult.total_paid_out ?? null;
+      const extractedPaidIn  = bankStatement.total_paid_in  ?? extractionResult.total_paid_in  ?? null;
+      const extractedPaidOut = bankStatement.total_paid_out ?? extractionResult.total_paid_out ?? null;
       setPaymentIncomingTotal(extractedPaidIn);
       setPaymentOutgoingTotal(extractedPaidOut);
 
-      const s3Url = extractionResult.file_url || extractionResult.s3_url || extractionResult.bank_statement_url || "";
-      if (s3Url) setBankStatementUrl(s3Url);
-
       if (mapped.length === 0) {
-        toast.success("Parsed, but no transactions found.");
+        toast.success("AI analysis complete — no transactions found.");
       } else {
-        setUploadedFileName(file.name);
         setTransactions(mapped);
-        toast.success(`Successfully parsed ${mapped.length} transactions.`);
+        toast.success(`AI analysis complete — ${mapped.length} transactions extracted.`);
       }
     } catch (error: any) {
-      console.error("Upload error:", error);
-      toast.error(error.response?.data?.details || "Failed to parse bank statement.");
+      console.error("AI analysis error:", error);
+      toast.error(error.response?.data?.details || "AI analysis failed. Please try again.");
     } finally {
-      setIsParsing(false);
+      setIsAnalysing(false);
       toast.dismiss(loadingToast);
-      if (fileInputRef.current) fileInputRef.current.value = "";
     }
   };
 
@@ -357,22 +402,52 @@ function BankStatementImpl() {
               </div>
             </div>
 
-            <div style={{ marginBottom: "24px" }}>
+            {/* ── Step 1: Upload PDF ── */}
+            <div style={{ marginBottom: "16px" }}>
               <input type="file" accept=".pdf" ref={fileInputRef} onChange={handleFileUpload} style={{ display: "none" }} />
               <button
                 onClick={() => fileInputRef.current?.click()}
-                disabled={isParsing}
+                disabled={isUploading || isAnalysing}
                 style={{
                   width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: "8px",
                   padding: "12px 16px", backgroundColor: "#F0F9FF", border: "1.5px dashed #0EA5E9",
                   borderRadius: "10px", color: "#0369A1", fontSize: "14.5px", fontWeight: "600",
-                  cursor: isParsing ? "not-allowed" : "pointer"
+                  cursor: (isUploading || isAnalysing) ? "not-allowed" : "pointer"
                 }}
               >
-                {isParsing ? <SpinnerIcon color="#0EA5E9" /> : <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17.5 19L19 19C21.2091 19 23 17.2091 23 15C23 12.7909 21.2091 11 19 11C18.8296 11 18.6625 11.0107 18.4988 11.0317C17.7412 8.14811 15.1182 6 12 6C9.11584 6 6.6247 7.8258 5.67232 10.3957C3.12061 10.7483 1 12.9163 1 15.5C1 18.5376 3.46243 21 6.5 21L8 21" /><path d="M12 11V21M12 11L9 14M12 11L15 14" /></svg>}
-                {isParsing ? "Analyzing..." : uploadedFileName ? `Re-upload (${uploadedFileName})` : "Upload Bank Statement PDF"}
+                {(isUploading || isAnalysing)
+                  ? <SpinnerIcon color="#0EA5E9" />
+                  : <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17.5 19L19 19C21.2091 19 23 17.2091 23 15C23 12.7909 21.2091 11 19 11C18.8296 11 18.6625 11.0107 18.4988 11.0317C17.7412 8.14811 15.1182 6 12 6C9.11584 6 6.6247 7.8258 5.67232 10.3957C3.12061 10.7483 1 12.9163 1 15.5C1 18.5376 3.46243 21 6.5 21L8 21" /><path d="M12 11V21M12 11L9 14M12 11L15 14" /></svg>}
+                {isUploading ? "Uploading to Cloudflare…" : isAnalysing ? "Analyzing Statement…" : (uploadedFileName || bankStatementUrl) ? `Re-upload ${uploadedFileName ? `(${uploadedFileName})` : "Statement"}` : "Upload Bank Statement PDF"}
               </button>
             </div>
+
+            {/* ── Uploaded file info + AI Analysis button ── */}
+            {bankStatementUrl && (
+              <div style={{ marginBottom: "24px", padding: "16px 20px", backgroundColor: "#F0FDF4", border: "1.5px solid #86EFAC", borderRadius: "12px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: "12px", flexWrap: "wrap" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "10px", minWidth: 0 }}>
+                  <div style={{ flexShrink: 0, backgroundColor: "#DCFCE7", padding: "8px", borderRadius: "8px" }}>
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#16A34A" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
+                      <polyline points="14 2 14 8 20 8" />
+                      <polyline points="9 15 12 18 15 15" />
+                      <line x1="12" y1="10" x2="12" y2="18" />
+                    </svg>
+                  </div>
+                  <div style={{ minWidth: 0 }}>
+                    <p style={{ margin: 0, fontSize: "13px", fontWeight: "600", color: "#166534" }}>File stored successfully</p>
+                    <a
+                      href={bankStatementUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      style={{ fontSize: "11.5px", color: "#0852C9", textDecoration: "underline", wordBreak: "break-all" }}
+                    >
+                      {bankStatementUrl}
+                    </a>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {transactions.length > 0 && (
               <div style={{ marginBottom: "24px" }}>
@@ -452,9 +527,20 @@ function BankStatementImpl() {
                                   onMouseOut={(e) => e.currentTarget.style.backgroundColor = "transparent"}
                                 >
                                   £{t.amount.toLocaleString()}
-                                  {t.amount >= 2000 && (
-                                    <span style={{ marginLeft: "8px", fontSize: "10px", backgroundColor: "#F0F9FF", color: "#0369A1", padding: "2px 6px", borderRadius: "4px", border: "1px solid #B9E6FE", verticalAlign: "middle" }}>Large</span>
-                                  )}
+                                  <div style={{ display: "flex", flexWrap: "wrap", gap: "4px", marginTop: "4px" }}>
+                                    {t.flags?.is_large && (
+                                      <span style={{ fontSize: "9px", backgroundColor: "#FEF2F2", color: "#DC2626", padding: "1px 6px", borderRadius: "4px", border: "1px solid #FECACA", fontWeight: "600", textTransform: "uppercase" }}>Large</span>
+                                    )}
+                                    {t.flags?.is_salary && (
+                                      <span style={{ fontSize: "9px", backgroundColor: "#F0FDF4", color: "#166534", padding: "1px 6px", borderRadius: "4px", border: "1px solid #BBF7D0", fontWeight: "600", textTransform: "uppercase" }}>Salary</span>
+                                    )}
+                                    {t.flags?.is_contractor && (
+                                      <span style={{ fontSize: "9px", backgroundColor: "#EFF6FF", color: "#1D4ED8", padding: "1px 6px", borderRadius: "4px", border: "1px solid #BFDBFE", fontWeight: "600", textTransform: "uppercase" }}>Contractor</span>
+                                    )}
+                                    {(!t.flags || Object.keys(t.flags).length === 0) && t.amount >= 2000 && (
+                                      <span style={{ fontSize: "9px", backgroundColor: "#F1F5F9", color: "#475569", padding: "1px 6px", borderRadius: "4px", border: "1px solid #E2E8F0", fontWeight: "600", textTransform: "uppercase" }}>Large</span>
+                                    )}
+                                  </div>
                                 </div>
                                 <div
                                   onClick={() => handleEditStart(t)}

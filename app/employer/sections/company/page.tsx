@@ -1,14 +1,11 @@
 'use client';
 
-import { useState, useEffect, Suspense, useRef } from "react";
+import { useState, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import axios from "axios";
-import { toast } from "react-hot-toast";
 import {
   createHRValidationRecordAction,
   listHRValidationRecordsAction,
   updateHRValidationRecordAction,
-  listFinancialRecordsAction,
 } from "@/app/employer/sections/action/action";
 import HRValidationTabs from "../_components/HRValidationTabs";
 
@@ -32,27 +29,6 @@ const SpinnerIcon = ({ color = "#0852C9" }: { color?: string }) => (
   </svg>
 );
 
-const NON_COMPLIANT_REFS = ["loan", "gift", "director investment", "director's loan", "personal"];
-function getTransactionStatus(ref: string): "ok" | "fail" {
-  const lower = (ref || "").toLowerCase();
-  if (NON_COMPLIANT_REFS.some((r) => lower.includes(r))) return "fail";
-  return "ok";
-}
-
-const MONTH_MAP: Record<string, string> = {
-  jan: "01", feb: "02", mar: "03", apr: "04", may: "05", jun: "06",
-  jul: "07", aug: "08", sep: "09", oct: "10", nov: "11", dec: "12",
-};
-function formatDate(raw: string | null | undefined): string {
-  if (!raw) return "";
-  const parts = raw.trim().split(/\s+/);
-  if (parts.length !== 3) return raw;
-  const [dd, mon, yy] = parts;
-  const mm = MONTH_MAP[mon.toLowerCase()];
-  if (!mm) return raw;
-  const year = parseInt(yy, 10) + 2000;
-  return `${dd.padStart(2, "0")}-${mm}-${year}`;
-}
 
 export default function CompanyPage() {
   return (
@@ -62,29 +38,6 @@ export default function CompanyPage() {
   );
 }
 
-// ─── Shared styles & Icons for Transactions Table ─────────────────────────────
-
-const inputStyle: React.CSSProperties = { width: "100%", padding: "10px 12px", borderRadius: "8px", border: "1.5px solid #0852C9", fontSize: "14px", outline: "none", boxSizing: "border-box", color: "#0F172A", backgroundColor: "white" };
-const iconBtn: React.CSSProperties = { display: "flex", alignItems: "center", justifyContent: "center", padding: "6px", backgroundColor: "transparent", border: "none", cursor: "pointer", color: "#64748B", transition: "color 0.2s" };
-
-const TrashIcon = (): React.JSX.Element => (
-  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2M10 11v6M14 11v6" />
-  </svg>
-);
-
-const CheckIcon = (): React.JSX.Element => (
-  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <polyline points="20 6 9 17 4 12" />
-  </svg>
-);
-
-const XIcon = (): React.JSX.Element => (
-  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
-  </svg>
-);
-
 function CompanyPageImpl() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -93,53 +46,7 @@ function CompanyPageImpl() {
   const [loading, setLoading] = useState(true);
   const [apiError, setApiError] = useState("");
   const [companyName, setCompanyName] = useState("");
-  const [bankName, setBankName] = useState("Other Banks");
   const [tabProgress, setTabProgress] = useState<Record<string, boolean>>({});
-
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const [isParsing, setIsParsing] = useState(false);
-  const [uploadedFileName, setUploadedFileName] = useState("");
-  const [manualOpening, setManualOpening] = useState("");
-  const [manualClosing, setManualClosing] = useState("");
-  const [paymentIncomingTotal, setPaymentIncomingTotal] = useState<number | null>(null);
-  const [paymentOutgoingTotal, setPaymentOutgoingTotal] = useState<number | null>(null);
-
-  const [transactions, setTransactions] = useState<any[]>([]);
-  const [searchDate, setSearchDate] = useState("");
-  const [searchAmount, setSearchAmount] = useState("");
-  const [searchType, setSearchType] = useState("");
-  const [searchReference, setSearchReference] = useState("");
-  const [editingId, setEditingId] = useState<number | null>(null);
-  const [editValues, setEditValues] = useState<any | null>(null);
-  const [bankStatementUrl, setBankStatementUrl] = useState("");
-
-  const handleDelete = (id: number): void => {
-    setTransactions(prev => prev.filter(t => t.id !== id));
-    toast.success("Transaction deleted");
-  };
-
-  const handleEditStart = (t: any): void => {
-    setEditingId(t.id);
-    setEditValues({ ...t });
-  };
-
-  const handleEditSave = (): void => {
-    if (!editValues) return;
-    const updated = transactions.map(t =>
-      t.id === editingId
-        ? { ...editValues, status: getTransactionStatus(editValues.reference) }
-        : t
-    );
-    setTransactions(updated);
-    setEditingId(null);
-    setEditValues(null);
-    toast.success("Transaction updated");
-  };
-
-  const handleEditCancel = (): void => {
-    setEditingId(null);
-    setEditValues(null);
-  };
 
 
   useEffect(() => {
@@ -152,101 +59,6 @@ function CompanyPageImpl() {
       }
     }
   }, [searchParams]);
-
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    // Reset balances to null/empty so extracted data from PDF is used
-    setManualOpening("");
-    setManualClosing("");
-
-    const formData = new FormData();
-    formData.append("file", file);
-    formData.append("bank_name", bankName);
-    formData.append("manual_opening", "");
-    formData.append("manual_closing", "");
-    formData.append("employee_name", "string");
-
-    setIsParsing(true);
-    const loadingToast = toast.loading("Parsing bank statement...");
-
-    try {
-      const response = await axios.post("/api/extract-bank-statement", formData);
-      const resData = response.data;
-      const extractionResult = resData.data || resData || {};
-      const fetchedTransactions = extractionResult.transactions || [];
-
-      if (!Array.isArray(fetchedTransactions)) {
-        toast.error("Invalid response format from bank statement parser.");
-        return;
-      }
-
-      const mapped = fetchedTransactions.map((t: any, idx: number) => {
-        const hasPaidOut = t.paid_out !== null && t.paid_out !== undefined && t.paid_out !== "" && String(t.paid_out).trim() !== "0";
-        const hasPaidIn = t.paid_in !== null && t.paid_in !== undefined && t.paid_in !== "" && String(t.paid_in).trim() !== "0";
-
-        const amtValue = hasPaidOut ? t.paid_out : (hasPaidIn ? t.paid_in : (t.amount || t.value || 0));
-        const amt = typeof amtValue === 'string' ? parseFloat(amtValue.replace(/[^\d.-]/g, '')) : amtValue;
-
-        let isIncoming = true;
-        if (hasPaidOut) isIncoming = false;
-        else if (hasPaidIn) isIncoming = true;
-        else if (t.type === "debit" || t.direction === "out") isIncoming = false;
-        else if (t.type === "credit" || t.direction === "in") isIncoming = true;
-        else if (typeof amt === 'number') isIncoming = amt >= 0;
-
-        return {
-          id: Date.now() + idx,
-          date: formatDate(t.date),
-          amount: Math.abs(amt || 0),
-          reference: t.description || t.reference || t.memo || "Unknown",
-          type: isIncoming ? "incoming" : "outgoing",
-          status: getTransactionStatus(t.description || t.reference || t.memo || ""),
-        };
-      });
-
-      // Auto-fill opening/closing balance from API response if not manually set
-      const extractedOpening = extractionResult.opening_balance ?? extractionResult.openingBalance ?? null;
-      const extractedClosing = extractionResult.closing_balance ?? extractionResult.closingBalance ?? null;
-      if (extractedOpening !== null) {
-        setManualOpening(String(extractedOpening));
-      }
-      if (extractedClosing !== null) {
-        setManualClosing(String(extractedClosing));
-      }
-
-      // New: Extract total_paid_in and total_paid_out
-      const extractedPaidIn = extractionResult.total_paid_in ?? null;
-      const extractedPaidOut = extractionResult.total_paid_out ?? null;
-      setPaymentIncomingTotal(extractedPaidIn);
-      setPaymentOutgoingTotal(extractedPaidOut);
-      if (extractedPaidIn !== null || extractedPaidOut !== null) {
-        console.log("[Extraction] Total Paid In:", extractedPaidIn, "Total Paid Out:", extractedPaidOut);
-      }
-
-      // Capture S3 URL from response
-      const s3Url = extractionResult.file_url || extractionResult.s3_url || extractionResult.bank_statement_url || "";
-      if (s3Url) {
-        setBankStatementUrl(s3Url);
-      }
-
-      if (mapped.length === 0) {
-        toast.success("Parsed, but no transactions found in the statement.");
-      } else {
-        setUploadedFileName(file.name);
-        setTransactions(mapped);
-        toast.success(`Successfully parsed ${mapped.length} transactions.`);
-      }
-    } catch (error: any) {
-      console.error("Upload error:", error);
-      toast.error(error.response?.data?.details || "Failed to parse bank statement.");
-    } finally {
-      setIsParsing(false);
-      toast.dismiss(loadingToast);
-      if (fileInputRef.current) fileInputRef.current.value = "";
-    }
-  };
 
   async function initHRRecord() {
     setLoading(true);
@@ -327,7 +139,6 @@ function CompanyPageImpl() {
 
         // Hydrate from server if available
         let srvName = "";
-        let srvBank = "";
         const record = sortedRecords.find((r) => r.id === recordId);
         if (record) {
           if (record.company_name) {
