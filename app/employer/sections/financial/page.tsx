@@ -10,7 +10,8 @@ import {
   listFinancialRecordsAction,
   createFinancialRecordAction,
   updateFinancialRecordAction,
-  listHRValidationRecordsAction
+  listHRValidationRecordsAction,
+  listEmployeesAction,
 } from "@/app/employer/sections/action/action";
 import { getClientToken } from "@/app/employer/sections/company/page";
 
@@ -37,23 +38,39 @@ interface Transaction {
   reference: string;
   type: "incoming" | "outgoing";
   status: "ok" | "fail";
+  flags?: {
+    is_large?: boolean;
+    is_salary?: boolean;
+    is_contractor?: boolean;
+  };
+}
+
+interface VerificationResult {
+  contract: string;
+  status: string;
+  match_details: string | null;
 }
 
 interface FinancialData {
-  balance?: number;
-  Opening_Balance?: number;
-  Closing_Balance?: number;
-  incoming?: number;
-  outgoing?: number;
-  netCashFlow?: number;
+  balance?: number | null;
+  Opening_Balance?: number | null;
+  Closing_Balance?: number | null;
+  incoming?: number | null;
+  outgoing?: number | null;
+  netCashFlow?: number | null;
   transactions?: Transaction[];
+  payment_incoming_total?: number | null;
+  payment_outgoing_total?: number | null;
   paymentsReflected?: string | null;
   futureEngagement?: string | null;
   bank_statement_url?: string | null;
+  contract_verification_results?: VerificationResult[] | null;
 }
 
 interface SavedContract {
   clientName?: string;
+  contract_amount?: string;
+  period?: string;
   [key: string]: unknown;
 }
 
@@ -79,15 +96,15 @@ interface RadioRowProps {
 interface BalanceStepProps {
   onNext: () => void;
   onSave: (data: Partial<FinancialData>) => void;
-  initialBalance?: number;
+  initialBalance?: number | null;
 }
 
 interface CashFlowStepProps {
   onNext: () => void;
   onPrev: () => void;
   onSave: (data: Partial<FinancialData>) => void;
-  initialIncoming?: number;
-  initialOutgoing?: number;
+  initialIncoming?: number | null;
+  initialOutgoing?: number | null;
 }
 
 interface InvestmentsStepProps {
@@ -95,8 +112,10 @@ interface InvestmentsStepProps {
   onPrev: () => void;
   onSave: (data: Partial<FinancialData>) => void;
   initialTransactions?: Transaction[];
-  initialOpening?: number;
-  initialClosing?: number;
+  initialOpening?: number | null;
+  initialClosing?: number | null;
+  employees?: any[];
+  bankStatementUrl?: string | null;
 }
 
 interface ContractsSyncStepProps {
@@ -316,11 +335,27 @@ function RadioRow({ value, selected, onChange, label, desc }: RadioRowProps): Re
 
 function BalanceStep({ onNext, onSave, initialBalance, isSubmitting = false }: BalanceStepProps & { isSubmitting?: boolean }): React.JSX.Element {
   const [balance, setBalance] = useState<string>(initialBalance != null ? String(initialBalance) : "");
-  const num = parseFloat(balance);
-  const isCompliant = !isNaN(num) && num >= MIN_BALANCE;
-  const isInsufficient = !isNaN(num) && num < MIN_BALANCE && balance !== "";
 
-  const handleNext = (): void => { onSave({ balance: num }); onNext(); };
+  // Sync internal state with prop if it changes (e.g. after async fetch)
+  useEffect(() => {
+    if (initialBalance != null) {
+      setBalance(String(initialBalance));
+    }
+  }, [initialBalance]);
+  // Sync manual input to parent state
+  useEffect(() => {
+    const n = balance !== "" ? parseFloat(balance) : null;
+    onSave({ balance: n, Closing_Balance: n });
+  }, [balance]);
+
+  const num = balance !== "" ? parseFloat(balance) : null;
+  const isCompliant = num !== null && !isNaN(num) && num >= MIN_BALANCE;
+  const isInsufficient = num !== null && !isNaN(num) && num < MIN_BALANCE && balance !== "";
+
+  const handleNext = (): void => { 
+    onSave({ balance: num, Closing_Balance: num }); 
+    onNext(); 
+  };
 
   return (
     <div style={{ backgroundColor: "white", borderRadius: "10px", border: "1px solid #E2E8F0", padding: "28px 30px" }}>
@@ -380,11 +415,11 @@ function BalanceStep({ onNext, onSave, initialBalance, isSubmitting = false }: B
 function CashFlowStep({ onNext, onPrev, onSave, initialIncoming, initialOutgoing, isSubmitting = false }: CashFlowStepProps & { isSubmitting?: boolean }): React.JSX.Element {
   const [incoming, setIncoming] = useState<string>(initialIncoming != null ? String(initialIncoming) : "");
   const [outgoing, setOutgoing] = useState<string>(initialOutgoing != null ? String(initialOutgoing) : "");
-  const inNum = parseFloat(incoming) || 0;
-  const outNum = parseFloat(outgoing) || 0;
-  const net = inNum - outNum;
-  const positive = inNum > 0 && outNum > 0 && net > 0;
-  const negative = inNum > 0 && outNum > 0 && net <= 0;
+  const inNum = incoming !== "" ? parseFloat(incoming) : null;
+  const outNum = outgoing !== "" ? parseFloat(outgoing) : null;
+  const net = (inNum !== null && outNum !== null) ? inNum - outNum : null;
+  const positive = inNum !== null && outNum !== null && net !== null && net > 0;
+  const negative = inNum !== null && outNum !== null && net !== null && net <= 0;
   const canContinue = incoming && outgoing;
 
   const handleNext = (): void => { onSave({ incoming: inNum, outgoing: outNum, netCashFlow: net }); onNext(); };
@@ -447,12 +482,14 @@ function CashFlowStep({ onNext, onPrev, onSave, initialIncoming, initialOutgoing
 
 // ─── InvestmentsStep ──────────────────────────────────────────────────────────
 
-function InvestmentsStep({ onNext, onPrev, onSave, initialTransactions, initialOpening, initialClosing, isSubmitting = false }: InvestmentsStepProps & { isSubmitting?: boolean }): React.JSX.Element {
+function InvestmentsStep({ onNext, onPrev, onSave, initialTransactions, initialOpening, initialClosing, isSubmitting = false, employees, bankStatementUrl }: InvestmentsStepProps & { isSubmitting?: boolean }): React.JSX.Element {
   const [amount, setAmount] = useState<string>("");
   const [reference, setReference] = useState<string>("");
   const [type, setType] = useState<"incoming" | "outgoing">("incoming");
   const [transactions, setTransactions] = useState<Transaction[]>(initialTransactions || []);
   const [isParsing, setIsParsing] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadedFileName, setUploadedFileName] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [manualOpening, setManualOpening] = useState(initialOpening != null ? String(initialOpening) : "");
   const [manualClosing, setManualClosing] = useState(initialClosing != null ? String(initialClosing) : "");
@@ -475,54 +512,51 @@ function InvestmentsStep({ onNext, onPrev, onSave, initialTransactions, initialO
     setManualOpening("");
     setManualClosing("");
 
-    const hrRecordId = sessionStorage.getItem("current_hr_record_id");
-    const storedBankName = hrRecordId ? sessionStorage.getItem(`bank_name_${hrRecordId}`) : null;
-
-    const formData = new FormData();
-    formData.append("file", file);
-    formData.append("bank_name", storedBankName || "Generic (AI Vision)");
-    formData.append("manual_opening", "");
-    formData.append("manual_closing", "");
-    formData.append("employee_name", "string");
-
-    setIsParsing(true);
-    const loadingToast = toast.loading("Parsing bank statement...");
+    setIsUploading(true);
+    const loadingToast = toast.loading("Uploading to secure storage...");
 
     try {
-      const response = await axios.post("/api/extract-bank-statement", formData);
+      // 1. Get presigned URL and upload to R2
+      const presignRes = await axios.post("/api/upload-presign", {
+        fileName: `Bank statements/${file.name}`,
+        fileType: file.type || "application/pdf",
+      });
+      const { presignedUrl, publicUrl } = presignRes.data;
+
+      await axios.put(presignedUrl, file, {
+        headers: { "Content-Type": file.type || "application/pdf" },
+      });
+
+      setUploadedFileName(file.name);
+      setIsUploading(false);
+      toast.dismiss(loadingToast);
+      setIsParsing(true);
+      const parseToast = toast.loading("AI analysis in progress...");
+
+      // 2. Call the AI parser with the public URL
+      const response = await axios.post("/api/parse-bank-statement", {
+        file_url: publicUrl,
+        employee_name: (employees || []).map((e) => e.employee_full_name),
+      });
 
       const resData = response.data;
-      // Handle different API response structures (e.g., { data: { transactions: [] } } or { transactions: [] })
+      const bankStatement = resData.bank_statement || {};
       const extractionResult = resData.data || resData || {};
-      const fetchedTransactions = extractionResult.transactions || [];
+      const fetchedTransactions = bankStatement.all_transactions || extractionResult.transactions || [];
 
       if (!Array.isArray(fetchedTransactions)) {
-        console.error("Fetched transactions is not an array:", fetchedTransactions);
         toast.error("Invalid response format from bank statement parser.");
         return;
       }
 
       const mapped: Transaction[] = fetchedTransactions.map((t: any, idx: number) => {
-        // Handle various field names for amount
         const hasPaidOut = t.paid_out !== null && t.paid_out !== undefined && t.paid_out !== "" && String(t.paid_out).trim() !== "0";
         const hasPaidIn = t.paid_in !== null && t.paid_in !== undefined && t.paid_in !== "" && String(t.paid_in).trim() !== "0";
 
         const amtValue = hasPaidOut ? t.paid_out : (hasPaidIn ? t.paid_in : (t.amount || t.value || 0));
         const amt = typeof amtValue === 'string' ? parseFloat(amtValue.replace(/[^\d.-]/g, '')) : amtValue;
 
-        // Handle various field names for type/direction
-        let isIncoming = true;
-        if (hasPaidOut) {
-          isIncoming = false;
-        } else if (hasPaidIn) {
-          isIncoming = true;
-        } else if (t.type === "debit" || t.direction === "out") {
-          isIncoming = false;
-        } else if (t.type === "credit" || t.direction === "in") {
-          isIncoming = true;
-        } else if (typeof amt === 'number') {
-          isIncoming = amt >= 0;
-        }
+        const isIncoming = hasPaidIn || (!hasPaidOut && (t.type === "credit" || t.direction === "in" || (typeof amt === "number" && amt >= 0)));
 
         return {
           id: Date.now() + idx,
@@ -531,42 +565,40 @@ function InvestmentsStep({ onNext, onPrev, onSave, initialTransactions, initialO
           reference: t.description || t.reference || t.memo || "Unknown",
           type: isIncoming ? "incoming" : "outgoing",
           status: getTransactionStatus(t.description || t.reference || t.memo || ""),
+          flags: t.flags || {}
         };
       });
 
-      // Auto-fill opening/closing balance from API response if not manually set
-      const extractedOpening = extractionResult.opening_balance ?? extractionResult.openingBalance ?? null;
-      const extractedClosing = extractionResult.closing_balance ?? extractionResult.closingBalance ?? null;
-      if (extractedOpening !== null) {
-        setManualOpening(String(extractedOpening));
-      }
-      if (extractedClosing !== null) {
-        setManualClosing(String(extractedClosing));
-      }
+      // Auto-fill opening/closing balance
+      const extractedOpening = bankStatement.opening_balance ?? extractionResult.opening_balance ?? extractionResult.openingBalance ?? null;
+      const extractedClosing = bankStatement.closing_balance ?? extractionResult.closing_balance ?? extractionResult.closingBalance ?? null;
+      if (extractedOpening !== null) setManualOpening(String(extractedOpening));
+      if (extractedClosing !== null) setManualClosing(String(extractedClosing));
 
-      // Capture S3 URL
-      const s3Url = extractionResult.file_url || extractionResult.s3_url || extractionResult.bank_statement_url || "";
-      if (s3Url) {
-        onSave({ bank_statement_url: s3Url });
-      }
+      const extractedPaidIn = bankStatement.total_paid_in ?? extractionResult.total_paid_in ?? null;
+      const extractedPaidOut = bankStatement.total_paid_out ?? extractionResult.total_paid_out ?? null;
+
+      onSave({ 
+        bank_statement_url: publicUrl,
+        payment_incoming_total: extractedPaidIn,
+        payment_outgoing_total: extractedPaidOut,
+        incoming: extractedPaidIn !== null ? Number(extractedPaidIn) : undefined,
+        outgoing: extractedPaidOut !== null ? Number(extractedPaidOut) : undefined
+      });
 
       if (mapped.length === 0) {
         toast.success("Parsed, but no transactions found in the statement.");
       } else {
         setTransactions(mapped);
-
-        const largeCount = mapped.filter(t => t.amount >= 2000).length;
-        if (largeCount > 0) {
-          toast.success(`Successfully parsed ${mapped.length} transactions (${largeCount} high-value).`);
-        } else {
-          toast.success(`Successfully parsed ${mapped.length} transactions.`);
-        }
+        const largeCount = mapped.filter(t => t.amount >= 2000 || t.flags?.is_large).length;
+        toast.success(`Successfully parsed ${mapped.length} transactions (${largeCount} high-value).`);
       }
+      toast.dismiss(parseToast);
     } catch (error: any) {
       console.error("Upload error:", error);
-      const errorMsg = error.response?.data?.details || "Failed to parse bank statement.";
-      toast.error(errorMsg);
+      toast.error(error.response?.data?.details || "Failed to parse bank statement.");
     } finally {
+      setIsUploading(false);
       setIsParsing(false);
       toast.dismiss(loadingToast);
       if (fileInputRef.current) fileInputRef.current.value = "";
@@ -609,24 +641,27 @@ function InvestmentsStep({ onNext, onPrev, onSave, initialTransactions, initialO
 
   // Sync manual balances with parent state in real-time
   useEffect(() => {
+    const openingValue = manualOpening !== "" ? parseFloat(manualOpening) : null;
+    const closingValue = manualClosing !== "" ? parseFloat(manualClosing) : null;
     onSave({
-      Opening_Balance: parseFloat(manualOpening) || 0,
-      Closing_Balance: parseFloat(manualClosing) || 0
+      Opening_Balance: openingValue,
+      Closing_Balance: closingValue,
+      balance: closingValue
     });
   }, [manualOpening, manualClosing]);
 
   const handleNext = (): void => {
     onSave({
       transactions,
-      Opening_Balance: parseFloat(manualOpening) || 0,
-      Closing_Balance: parseFloat(manualClosing) || 0
+      Opening_Balance: manualOpening !== "" ? parseFloat(manualOpening) : null,
+      Closing_Balance: manualClosing !== "" ? parseFloat(manualClosing) : null
     });
     onNext();
   };
 
   return (
     <div style={{ backgroundColor: "white", borderRadius: "10px", border: "1px solid #E2E8F0", padding: "28px 30px" }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "6px" }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "16px" }}>
         <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
           <DollarIcon />
           <h3 style={{ margin: 0, fontSize: "18px", fontWeight: "700", color: "#0F172A" }}>Step 3: Large Transaction / Investment Check</h3>
@@ -643,7 +678,7 @@ function InvestmentsStep({ onNext, onPrev, onSave, initialTransactions, initialO
           />
           <button
             onClick={() => fileInputRef.current?.click()}
-            disabled={isParsing}
+            disabled={isParsing || isUploading}
             style={{
               display: "flex",
               alignItems: "center",
@@ -655,15 +690,36 @@ function InvestmentsStep({ onNext, onPrev, onSave, initialTransactions, initialO
               color: "#0369A1",
               fontSize: "13.5px",
               fontWeight: "600",
-              cursor: isParsing ? "not-allowed" : "pointer",
+              cursor: (isParsing || isUploading) ? "not-allowed" : "pointer",
               transition: "all 0.2s"
             }}
           >
-            {isParsing ? <SpinnerIcon color="#0EA5E9" /> : <CloudIcon />}
-            {isParsing ? "Analyzing..." : "Upload Bank Statement"}
+            {(isParsing || isUploading) ? <SpinnerIcon color="#0EA5E9" /> : <CloudIcon />}
+            {isUploading ? "Uploading..." : isParsing ? "Analyzing..." : (uploadedFileName || bankStatementUrl) ? `Re-upload ${uploadedFileName ? `(${uploadedFileName})` : "Statement"}` : "Upload Bank Statement"}
           </button>
         </div>
       </div>
+
+      {bankStatementUrl && (
+        <div style={{ marginBottom: "20px", padding: "12px 16px", backgroundColor: "#F0FDF4", border: "1.5px solid #86EFAC", borderRadius: "10px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: "12px", flexWrap: "wrap" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "10px", minWidth: 0 }}>
+            <div style={{ flexShrink: 0, backgroundColor: "#DCFCE7", padding: "6px", borderRadius: "6px" }}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#16A34A" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
+                <polyline points="14 2 14 8 20 8" />
+                <polyline points="9 15 12 18 15 15" />
+                <line x1="12" y1="10" x2="12" y2="18" />
+              </svg>
+            </div>
+            <div style={{ minWidth: 0 }}>
+              <p style={{ margin: 0, fontSize: "12px", fontWeight: "600", color: "#166534" }}>File stored successfully</p>
+              <a href={bankStatementUrl} target="_blank" rel="noreferrer" style={{ fontSize: "11px", color: "#0852C9", textDecoration: "underline", wordBreak: "break-all" }}>
+                {bankStatementUrl}
+              </a>
+            </div>
+          </div>
+        </div>
+      )}
       <p style={{ margin: "0 0 16px", fontSize: "13px", color: "#64748B" }}>Transactions ≥ £2,000 require reference verification. You can upload a PDF to auto-populate high-value items.</p>
 
       {/* Opening & Closing Balance */}
@@ -836,20 +892,20 @@ function InvestmentsStep({ onNext, onPrev, onSave, initialTransactions, initialO
                           onMouseOut={(e) => e.currentTarget.style.backgroundColor = "transparent"}
                         >
                           £{t.amount.toLocaleString()}
-                          {t.amount >= 2000 && (
-                            <span style={{
-                              marginLeft: "8px",
-                              fontSize: "10px",
-                              backgroundColor: "#F0F9FF",
-                              color: "#0369A1",
-                              padding: "2px 6px",
-                              borderRadius: "4px",
-                              border: "1px solid #B9E6FE",
-                              verticalAlign: "middle"
-                            }}>
-                              Large
-                            </span>
-                          )}
+                          <div style={{ display: "flex", flexWrap: "wrap", gap: "4px", marginTop: "4px" }}>
+                            {t.flags?.is_large && (
+                              <span style={{ fontSize: "9px", backgroundColor: "#FEF2F2", color: "#DC2626", padding: "1px 6px", borderRadius: "4px", border: "1px solid #FECACA", fontWeight: "600", textTransform: "uppercase" }}>Large</span>
+                            )}
+                            {t.flags?.is_salary && (
+                              <span style={{ fontSize: "9px", backgroundColor: "#F0FDF4", color: "#166534", padding: "1px 6px", borderRadius: "4px", border: "1px solid #BBF7D0", fontWeight: "600", textTransform: "uppercase" }}>Salary</span>
+                            )}
+                            {t.flags?.is_contractor && (
+                              <span style={{ fontSize: "9px", backgroundColor: "#EFF6FF", color: "#1D4ED8", padding: "1px 6px", borderRadius: "4px", border: "1px solid #BFDBFE", fontWeight: "600", textTransform: "uppercase" }}>Contractor</span>
+                            )}
+                            {(!t.flags || Object.keys(t.flags).length === 0) && t.amount >= 2000 && (
+                              <span style={{ fontSize: "9px", backgroundColor: "#F1F5F9", color: "#475569", padding: "1px 6px", borderRadius: "4px", border: "1px solid #E2E8F0", fontWeight: "600", textTransform: "uppercase" }}>Large</span>
+                            )}
+                          </div>
                         </div>
                         <div
                           onClick={() => handleEditStart(t)}
@@ -913,12 +969,69 @@ interface SyncStatus {
   desc?: string;
 }
 
-function ContractsSyncStep({ onComplete, onPrev, savedContracts, onSave, initialPaymentsReflected, initialFutureEngagement, isSubmitting = false }: ContractsSyncStepProps & { isSubmitting?: boolean }): React.JSX.Element {
+function ContractsSyncStep({ onComplete, onPrev, savedContracts, onSave, initialPaymentsReflected, initialFutureEngagement, isSubmitting = false, financialData }: ContractsSyncStepProps & { isSubmitting?: boolean, financialData: FinancialData }): React.JSX.Element {
   const [paymentsReflected, setPaymentsReflected] = useState<string | null>(initialPaymentsReflected ?? null);
   const [futureEngagement, setFutureEngagement] = useState<string | null>(initialFutureEngagement ?? null);
+  const [isVerifying, setIsVerifying] = useState(false);
+  const [verificationResults, setVerificationResults] = useState<VerificationResult[] | null>(financialData.contract_verification_results ?? null);
 
-  const persistSelection = (payments: string | null, future: string | null): void => {
-    onSave({ paymentsReflected: payments, futureEngagement: future });
+  const persistSelection = (payments: string | null, future: string | null, results: VerificationResult[] | null = null): void => {
+    onSave({ 
+      paymentsReflected: payments, 
+      futureEngagement: future,
+      contract_verification_results: results || verificationResults
+    });
+  };
+
+  const handleVerify = async () => {
+    if (!savedContracts || savedContracts.length === 0) {
+      toast.error("No contracts found to verify.");
+      return;
+    }
+
+    setIsVerifying(true);
+    const loadingToast = toast.loading("Verifying contracts with bank statements...");
+
+    try {
+      const payload = {
+        contract_result: {
+          contracts: savedContracts.map(c => ({
+            contract_amount: c.contract_amount || "0 GBP",
+            period: c.period || "monthly"
+          })),
+          parties: Array.from(new Set(savedContracts.map(c => c.clientName).filter(Boolean)))
+        },
+        bank_result: {
+          data: {
+            transactions: financialData.transactions?.map(t => ({
+              date: t.date,
+              description: t.reference,
+              paid_in: t.type === "incoming" ? t.amount : 0,
+              paid_out: t.type === "outgoing" ? t.amount : 0
+            })) || []
+          }
+        }
+      };
+
+      const response = await axios.post("/api/verify-contracts", payload);
+      const results = response.data.verification_summary || [];
+      setVerificationResults(results);
+      
+      if (response.data.total_verified > 0) {
+        toast.success(`Successfully verified ${response.data.total_verified} contract(s)!`);
+        setPaymentsReflected("yes");
+        persistSelection("yes", futureEngagement, results);
+      } else {
+        toast.error("No matching transactions found for the contracts.");
+        persistSelection(paymentsReflected, futureEngagement, results);
+      }
+    } catch (error: any) {
+      console.error("Verification error:", error);
+      toast.error("Failed to verify contracts.");
+    } finally {
+      setIsVerifying(false);
+      toast.dismiss(loadingToast);
+    }
   };
 
   const getStatus = (): SyncStatus | null => {
@@ -933,9 +1046,25 @@ function ContractsSyncStep({ onComplete, onPrev, savedContracts, onSave, initial
 
   return (
     <div style={{ backgroundColor: "white", borderRadius: "10px", border: "1px solid #E2E8F0", padding: "28px 30px" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "6px" }}>
-        <FileIcon />
-        <h3 style={{ margin: 0, fontSize: "18px", fontWeight: "700", color: "#0F172A" }}>Step 4: Synchronize with Client Agreements</h3>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "6px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+          <FileIcon />
+          <h3 style={{ margin: 0, fontSize: "18px", fontWeight: "700", color: "#0F172A" }}>Step 4: Synchronize with Client Agreements</h3>
+        </div>
+        <button
+          onClick={handleVerify}
+          disabled={isVerifying || !savedContracts?.length}
+          style={{
+            display: "flex", alignItems: "center", gap: "8px",
+            padding: "8px 16px", backgroundColor: "#F0F9FF",
+            border: "1.5px solid #0EA5E9", borderRadius: "8px",
+            color: "#0369A1", fontSize: "13px", fontWeight: "600",
+            cursor: (isVerifying || !savedContracts?.length) ? "not-allowed" : "pointer"
+          }}
+        >
+          {isVerifying ? <SpinnerIcon color="#0EA5E9" /> : <CheckIcon />}
+          {isVerifying ? "Verifying..." : "Verify via AI"}
+        </button>
       </div>
       <p style={{ margin: "0 0 18px", fontSize: "13px", color: "#64748B" }}>Verify that contract payments are reflected in bank statements</p>
 
@@ -943,10 +1072,38 @@ function ContractsSyncStep({ onComplete, onPrev, savedContracts, onSave, initial
       {savedContracts && savedContracts.length > 0 && (
         <div style={{ backgroundColor: "#F8FAFC", borderRadius: "8px", border: "1px solid #E2E8F0", padding: "14px 18px", marginBottom: "18px" }}>
           <p style={{ margin: "0 0 10px", fontSize: "13.5px", fontWeight: "600", color: "#374151" }}>Contracts to verify:</p>
-          {savedContracts.map((c, i) => (
-            <div key={i} style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "5px" }}>
-              <FileIcon />
-              <span style={{ fontSize: "13.5px", color: "#374151" }}>{c.clientName || String(c)}</span>
+          <div style={{ display: "grid", gap: "8px" }}>
+            {savedContracts.map((c, i) => (
+              <div key={i} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 12px", backgroundColor: "white", borderRadius: "6px", border: "1px solid #E2E8F0" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                  <FileIcon />
+                  <div>
+                    <div style={{ fontSize: "13.5px", fontWeight: "600", color: "#0F172A" }}>{c.clientName || "Unknown Client"}</div>
+                    <div style={{ fontSize: "12px", color: "#64748B" }}>{c.contract_amount || "N/A"} • {c.period || "N/A"}</div>
+                  </div>
+                </div>
+                {verificationResults?.find(r => r.contract.includes(c.contract_amount || "")) && (
+                  <span style={{
+                    fontSize: "11px", fontWeight: "700", padding: "3px 8px", borderRadius: "12px",
+                    backgroundColor: verificationResults.find(r => r.contract.includes(c.contract_amount || ""))?.status === "Verified" ? "#DCFCE7" : "#FEE2E2",
+                    color: verificationResults.find(r => r.contract.includes(c.contract_amount || ""))?.status === "Verified" ? "#166534" : "#991B1B"
+                  }}>
+                    {verificationResults.find(r => r.contract.includes(c.contract_amount || ""))?.status}
+                  </span>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Verification Details */}
+      {verificationResults && verificationResults.some(r => r.match_details) && (
+        <div style={{ marginBottom: "18px", padding: "14px", backgroundColor: "#F0FDF4", borderRadius: "8px", border: "1.5px solid #86EFAC" }}>
+          <p style={{ margin: "0 0 8px", fontSize: "13px", fontWeight: "700", color: "#166534" }}>AI Match Findings:</p>
+          {verificationResults.map((r, i) => r.match_details && (
+            <div key={i} style={{ fontSize: "12.5px", color: "#166534", marginBottom: "4px" }}>
+              • <strong>{r.contract}</strong>: {r.match_details}
             </div>
           ))}
         </div>
@@ -1017,6 +1174,7 @@ function FinancialPageImpl(): React.JSX.Element {
   const [unlockedUpTo, setUnlockedUpTo] = useState<number>(0);
   const [financialData, setFinancialData] = useState<FinancialData>({});
   const [savedContracts, setSavedContracts] = useState<SavedContract[]>([]);
+  const [employees, setEmployees] = useState<any[]>([]);
   const [recordId, setRecordId] = useState<number | null>(null);
   const [financialRecordId, setFinancialRecordId] = useState<number | null>(null);
   // hydrated: true once sessionStorage has been read, so step components
@@ -1039,11 +1197,18 @@ function FinancialPageImpl(): React.JSX.Element {
         try {
           const token = getClientToken();
 
+          // Fetch employees to pass their names to the AI parser
+          const empRes = await listEmployeesAction(numId, token);
+          if (empRes.success) {
+            setEmployees(empRes.data || []);
+          }
+
           // Fetch HR Validation Record to get transactions
           const hrRes = await listHRValidationRecordsAction(token);
           if (hrRes.success && hrRes.data) {
             const hrRecord = hrRes.data.find((r: any) => r.id === numId);
             if (hrRecord) {
+              setSavedContracts(hrRecord.result_complete_sections?.contracts || []);
               setFinancialData(prev => ({
                 ...prev,
                 transactions: hrRecord.transactions 
@@ -1051,7 +1216,13 @@ function FinancialPageImpl(): React.JSX.Element {
                   : prev.transactions,
                 Opening_Balance: hrRecord.Opening_Balance ?? prev.Opening_Balance,
                 Closing_Balance: hrRecord.Closing_Balance ?? prev.Closing_Balance,
-                bank_statement_url: hrRecord.bank_statement_url ?? prev.bank_statement_url
+                bank_statement_url: hrRecord.bank_statement_url ?? prev.bank_statement_url,
+                payment_incoming_total: hrRecord.payment_incoming_total ?? prev.payment_incoming_total,
+                payment_outgoing_total: hrRecord.payment_outgoing_total ?? prev.payment_outgoing_total,
+                // Also sync Step 2 fields if they are missing
+                incoming: hrRecord.payment_incoming_total != null ? parseFloat(hrRecord.payment_incoming_total) : prev.incoming,
+                outgoing: hrRecord.payment_outgoing_total != null ? parseFloat(hrRecord.payment_outgoing_total) : prev.outgoing,
+                contract_verification_results: hrRecord.result_complete_sections?.contract_verification_results || prev.contract_verification_results
               }));
             }
           }
@@ -1063,9 +1234,12 @@ function FinancialPageImpl(): React.JSX.Element {
               setFinancialRecordId(finRecord.id);
               setFinancialData(prev => ({
                 ...prev,
-                balance: finRecord.current_closing_balance_gbp != null ? parseFloat(finRecord.current_closing_balance_gbp) : prev.balance,
-                incoming: finRecord.total_incoming_gbp_credits != null ? parseFloat(finRecord.total_incoming_gbp_credits) : prev.incoming,
-                outgoing: finRecord.total_outgoing_gbp_debits != null ? parseFloat(finRecord.total_outgoing_gbp_debits) : prev.outgoing,
+                // Use Closing_Balance from HR record (set above) as the source of truth for Step 1
+                balance: prev.Closing_Balance != null ? prev.Closing_Balance : prev.balance,
+                incoming: finRecord.payment_incoming_total != null ? parseFloat(finRecord.payment_incoming_total) : prev.incoming,
+                outgoing: finRecord.payment_outgoing_total != null ? parseFloat(finRecord.payment_outgoing_total) : prev.outgoing,
+                payment_incoming_total: finRecord.payment_incoming_total != null ? parseFloat(finRecord.payment_incoming_total) : prev.payment_incoming_total,
+                payment_outgoing_total: finRecord.payment_outgoing_total != null ? parseFloat(finRecord.payment_outgoing_total) : prev.payment_outgoing_total,
                 paymentsReflected: finRecord.payments_reflected_in_bank === true ? "yes" : finRecord.payments_reflected_in_bank === false ? "no" : prev.paymentsReflected,
                 futureEngagement: finRecord.is_future_engagement === true ? "yes" : finRecord.is_future_engagement === false ? "no" : prev.futureEngagement,
               }));
@@ -1111,19 +1285,33 @@ function FinancialPageImpl(): React.JSX.Element {
       const token = getClientToken();
 
       try {
+        // Fetch latest saved results to preserve other sections
+        const currentSaved = await getSavedResults(recordId);
+
+        // Ensure we use the most up-to-date balance for both fields
+        const finalBalance = financialData.balance ?? financialData.Closing_Balance;
+
         // Save global transactions in HR Validation Record
         await updateHRValidationRecordAction(recordId, {
           transactions: financialData.transactions,
           Opening_Balance: financialData.Opening_Balance,
-          Closing_Balance: financialData.Closing_Balance,
+          Closing_Balance: finalBalance,
           bank_statement_url: financialData.bank_statement_url,
+          payment_incoming_total: financialData.incoming,
+          payment_outgoing_total: financialData.outgoing,
+          result_complete_sections: {
+            ...currentSaved,
+            contract_verification_results: financialData.contract_verification_results,
+          }
         }, token);
 
         // Prepare payload for Financial Record
         const payload = {
-          current_closing_balance_gbp: financialData.balance != null ? String(financialData.balance) : null,
+          current_closing_balance_gbp: finalBalance != null ? String(finalBalance) : null,
           total_incoming_gbp_credits: financialData.incoming != null ? String(financialData.incoming) : null,
           total_outgoing_gbp_debits: financialData.outgoing != null ? String(financialData.outgoing) : null,
+          payment_incoming_total: financialData.incoming != null ? String(financialData.incoming) : null,
+          payment_outgoing_total: financialData.outgoing != null ? String(financialData.outgoing) : null,
           payments_reflected_in_bank: financialData.paymentsReflected === "yes" ? true : financialData.paymentsReflected === "no" ? false : null,
           is_future_engagement: financialData.futureEngagement === "yes" ? true : financialData.futureEngagement === "no" ? false : null,
           HRValidationRecord_id: recordId,
@@ -1147,6 +1335,18 @@ function FinancialPageImpl(): React.JSX.Element {
       router.push(`/employer/sections/summary?recordId=${recordId}`);
     }
   };
+
+  async function getSavedResults(id: number) {
+    try {
+      const token = getClientToken();
+      const res = await listHRValidationRecordsAction(token);
+      if (res.success && res.data) {
+        const record = res.data.find(r => r.id === id);
+        return record?.result_complete_sections || {};
+      }
+      return {};
+    } catch { return {}; }
+  }
 
   return (
     <div style={{ fontFamily: "'Segoe UI', system-ui, sans-serif", backgroundColor: "#F1F5F9", minHeight: "100vh" }}>
@@ -1176,9 +1376,22 @@ function FinancialPageImpl(): React.JSX.Element {
             initialOpening={financialData.Opening_Balance}
             initialClosing={financialData.Closing_Balance}
             isSubmitting={isSubmitting}
+            employees={employees}
+            bankStatementUrl={financialData.bank_statement_url}
           />
         )}
-        {hydrated && step === "contracts" && <ContractsSyncStep onComplete={handleComplete} onPrev={() => setStep("investments")} savedContracts={savedContracts} onSave={handleSave} initialPaymentsReflected={financialData.paymentsReflected} initialFutureEngagement={financialData.futureEngagement} isSubmitting={isSubmitting} />}
+        {hydrated && step === "contracts" && (
+          <ContractsSyncStep
+            onComplete={handleComplete}
+            onPrev={() => setStep("investments")}
+            savedContracts={savedContracts}
+            onSave={handleSave}
+            initialPaymentsReflected={financialData.paymentsReflected}
+            initialFutureEngagement={financialData.futureEngagement}
+            isSubmitting={isSubmitting}
+            financialData={financialData}
+          />
+        )}
 
         <div style={{ marginTop: "20px" }}>
           {step === "balance" ? (

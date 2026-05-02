@@ -9,17 +9,19 @@ const TABS = [
   { label: "0. Company", id: "company" },
   { label: "1. Staff List", id: "staff" },
   { label: "2. RTW Compliance", id: "rtw" },
-  { label: "3. Pension", id: "pension" },
-  { label: "4. Authorising Officer", id: "auth" },
-  { label: "5. Contracts", id: "contracts" },
-  { label: "6. Financial", id: "financial" },
-  { label: "7. Summary", id: "summary" },
+  { label: "3. Bank Statement", id: "bank" },
+  { label: "4. Pension", id: "pension" },
+  { label: "5. Authorising Officer", id: "auth" },
+  { label: "6. Contracts", id: "contracts" },
+  { label: "7. Financial", id: "financial" },
+  { label: "8. Summary", id: "summary" },
 ];
 
 const TAB_ROUTES: Record<string, string> = {
   company: "/employer/sections/company",
   staff: "/employer/sections/hr-validation",
   rtw: "/employer/sections/rtw-compliance",
+  bank: "/employer/sections/bank-statement",
   pension: "/employer/sections/pension",
   auth: "/employer/sections/authorising-officer",
   contracts: "/employer/sections/contracts",
@@ -91,7 +93,8 @@ export default function HRValidationTabs({
     if (tabId === "rtw") return !!isStaffDone;
     
     // Following steps use the progress map
-    if (tabId === "pension") return !!tabProgress.rtw;
+    if (tabId === "bank") return !!tabProgress.rtw;
+    if (tabId === "pension") return !!tabProgress.bank;
     if (tabId === "auth") return !!tabProgress.pension;
     if (tabId === "contracts") return !!tabProgress.auth;
     if (tabId === "financial") return !!tabProgress.contracts;

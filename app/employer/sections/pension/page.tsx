@@ -642,14 +642,14 @@ function PensionComplianceImpl() {
 
         <div style={{ marginTop: "24px" }}>
           <button
-            onClick={() => router.push(`/employer/sections/rtw-compliance?recordId=${recordId}`)}
+            onClick={() => router.push(`/employer/sections/bank-statement?recordId=${recordId}`)}
             style={{
               padding: "10px 20px", backgroundColor: "white", color: "#374151",
               border: "1.5px solid #D1D5DB", borderRadius: "8px",
               fontSize: "14px", fontWeight: "500", cursor: "pointer",
             }}
           >
-            Back to RTW Validation
+            Back to Bank Statement
           </button>
         </div>
       </div>

@@ -2,6 +2,8 @@
 
 import { useState, useEffect, useRef, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import axios from "axios";
+import toast from "react-hot-toast";
 import HRValidationTabs from "../_components/HRValidationTabs";
 import { updateHRValidationRecordAction, listHRValidationRecordsAction } from "@/app/employer/sections/action/action";
 import { getClientToken } from "@/app/employer/sections/company/page";
@@ -23,13 +25,12 @@ interface Contract {
   exists: "yes" | "no";
   aligns: "yes" | "no" | null;
   document: string | null;
+  contract_amount?: string;
+  period?: string;
+  text_block?: string;
 }
 
-type ContractStatus = "pass" | "fail" | "pending";
-
 interface ContractSummary {
-  passed: number;
-  failed: number;
   requireAction: number;
 }
 
@@ -62,23 +63,6 @@ const markComplete = (recordId: string | number | null, key: string): void => {
   } catch {}
 };
 
-// ─── Status helpers ───────────────────────────────────────────────────────────
-
-function getContractStatus(contract: Contract): ContractStatus {
-  if (contract.exists === "yes" && contract.aligns === "yes") return "pass";
-  if (contract.exists === "no" || contract.aligns === "no") return "fail";
-  return "pending";
-}
-
-function getSummary(contracts: Contract[]): ContractSummary {
-  let passed = 0, failed = 0;
-  contracts.forEach((c) => {
-    const s = getContractStatus(c);
-    if (s === "pass") passed++;
-    else if (s === "fail") failed++;
-  });
-  return { passed, failed, requireAction: 0 };
-}
 
 // ─── Icons ───────────────────────────────────────────────────────────────────
 
@@ -125,6 +109,19 @@ const SpinnerIcon = ({ color = "#0852C9" }: { color?: string }) => (
   </svg>
 );
 
+const CloudIcon = (): React.JSX.Element => (
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M17.5 19L19 19C21.2091 19 23 17.2091 23 15C23 12.7909 21.2091 11 19 11C18.8296 11 18.6625 11.0107 18.4988 11.0317C17.7412 8.14811 15.1182 6 12 6C9.11584 6 6.6247 7.8258 5.67232 10.3957C3.12061 10.7483 1 12.9163 1 15.5C1 18.5376 3.46243 21 6.5 21L8 21" />
+    <path d="M12 11V21M12 11L9 14M12 11L15 14" />
+  </svg>
+);
+
+const TrashIcon = (): React.JSX.Element => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#EF4444" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M10 11v6M14 11v6" />
+  </svg>
+);
+
 // ─── TopNav ───────────────────────────────────────────────────────────────────
 
 function TopNav({ onBack }: { onBack: () => void }) {
@@ -145,21 +142,55 @@ function AddContractForm({ onAdd, onCancel }: AddContractFormProps): React.JSX.E
   const [exists, setExists] = useState<string | null>(null);
   const [aligns, setAligns] = useState<string | null>(null);
   const [fileName, setFileName] = useState<string | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
+  const [fileObject, setFileObject] = useState<File | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const canAdd = clientName.trim() && exists;
+  const canAdd = clientName.trim() && exists && !isUploading;
   const showAligns = exists === "yes";
   const showUpload = exists === "yes";
 
-  const handleAdd = (): void => {
+  const uploadToCloudflare = async (file: File) => {
+    const { data: presignData } = await axios.post("/api/upload-presign", {
+      fileName: file.name,
+      fileType: file.type,
+    });
+    const { presignedUrl, publicUrl } = presignData;
+    await axios.put(presignedUrl, file, {
+      headers: { "Content-Type": file.type },
+    });
+    return publicUrl;
+  };
+
+  const handleAdd = async (): Promise<void> => {
     if (!canAdd) return;
+    
+    let documentUrl = fileName;
+    
+    if (fileObject) {
+      setIsUploading(true);
+      const loadingToast = toast.loading("Uploading contract document...");
+      try {
+        documentUrl = await uploadToCloudflare(fileObject);
+        toast.success("Document uploaded successfully.");
+      } catch (error) {
+        toast.error("Failed to upload document.");
+        setIsUploading(false);
+        toast.dismiss(loadingToast);
+        return;
+      } finally {
+        toast.dismiss(loadingToast);
+      }
+    }
+
     onAdd({
       id: Date.now(),
       clientName: clientName.trim(),
       exists: exists as "yes" | "no",
       aligns: exists === "no" ? "no" : (aligns as "yes" | "no" | null),
-      document: fileName,
+      document: documentUrl,
     });
+    setIsUploading(false);
   };
 
   const RadioRow = ({ value, selected, onChange, label }: RadioRowProps): React.JSX.Element => (
@@ -224,16 +255,33 @@ function AddContractForm({ onAdd, onCancel }: AddContractFormProps): React.JSX.E
       {showUpload && (
         <div style={{ marginBottom: "20px" }}>
           <label style={lbl}>Upload Contract Document (Optional)</label>
-          <input ref={inputRef} type="file" accept=".pdf" style={{ display: "none" }} onChange={(e) => setFileName(e.target.files?.[0]?.name || null)} />
+          <input 
+            ref={inputRef} 
+            type="file" 
+            accept=".pdf" 
+            style={{ display: "none" }} 
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) {
+                setFileObject(file);
+                setFileName(file.name);
+              }
+            }} 
+          />
           <div
-            onClick={() => inputRef.current?.click()}
+            onClick={() => !isUploading && inputRef.current?.click()}
             style={{
               border: "1.5px dashed #D1D5DB", borderRadius: "8px", padding: "24px 20px",
-              textAlign: "center", cursor: "pointer", backgroundColor: "#F9FAFB",
+              textAlign: "center", cursor: isUploading ? "not-allowed" : "pointer", backgroundColor: "#F9FAFB",
+              opacity: isUploading ? 0.6 : 1,
             }}
           >
-            <div style={{ display: "flex", justifyContent: "center", marginBottom: "6px" }}><UploadIcon /></div>
-            <p style={{ margin: 0, fontSize: "13px", color: "#9CA3AF" }}>{fileName || "Upload contract PDF"}</p>
+            <div style={{ display: "flex", justifyContent: "center", marginBottom: "6px" }}>
+              {isUploading ? <SpinnerIcon color="#9CA3AF" /> : <UploadIcon />}
+            </div>
+            <p style={{ margin: 0, fontSize: "13px", color: "#9CA3AF" }}>
+              {isUploading ? "Uploading..." : (fileName || "Upload contract PDF")}
+            </p>
           </div>
         </div>
       )}
@@ -241,13 +289,14 @@ function AddContractForm({ onAdd, onCancel }: AddContractFormProps): React.JSX.E
       {/* Actions */}
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
         <button onClick={onCancel} style={cancelBtn}>Cancel</button>
-        <button
-          onClick={handleAdd}
-          disabled={!canAdd}
-          style={{ ...primaryBtn, opacity: canAdd ? 1 : 0.5, cursor: canAdd ? "pointer" : "not-allowed" }}
-        >
-          Add Contract
-        </button>
+          <button
+            onClick={handleAdd}
+            disabled={!canAdd}
+            style={{ ...primaryBtn, opacity: canAdd ? 1 : 0.5, cursor: canAdd ? "pointer" : "not-allowed", display: "flex", alignItems: "center", justifyContent: "center", gap: "8px" }}
+          >
+            {isUploading && <SpinnerIcon color="#fff" />}
+            {isUploading ? "Uploading..." : "Add Contract"}
+          </button>
       </div>
     </div>
   );
@@ -271,6 +320,9 @@ function ContractsPageImpl(): React.JSX.Element {
   const [recordId, setRecordId] = useState<number | null>(null);
   const [businessNature, setBusinessNature] = useState<string>("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isParsing, setIsParsing] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [extractionData, setExtractionData] = useState<any>(null);
 
   useEffect(() => {
     const queryId = searchParams.get("recordId") || searchParams.get("id");
@@ -284,13 +336,75 @@ function ContractsPageImpl(): React.JSX.Element {
         const saved = await getSavedResults(parsedId);
         if (saved.business_nature) setBusinessNature(saved.business_nature);
         if (saved.contracts && Array.isArray(saved.contracts)) setContracts(saved.contracts);
+        if (saved.contract_extraction_data) setExtractionData(saved.contract_extraction_data);
       })();
     }
   }, [searchParams]);
 
+  const handleContractUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsParsing(true);
+    const loadingToast = toast.loading("Uploading and analyzing contract PDF...");
+
+    try {
+      // 1. Upload to Cloudflare R2
+      const { data: presignData } = await axios.post("/api/upload-presign", {
+        fileName: file.name,
+        fileType: file.type,
+      });
+      const { presignedUrl, publicUrl } = presignData;
+      await axios.put(presignedUrl, file, {
+        headers: { "Content-Type": file.type },
+      });
+
+      // 2. Extract data
+      const formData = new FormData();
+      formData.append("file", file);
+      const response = await axios.post("/api/extract-contract", formData);
+      const resData = response.data;
+      
+      setExtractionData(resData);
+
+      if (resData.contracts && Array.isArray(resData.contracts)) {
+        const clientParty = resData.parties?.find((p: any) => p.role === "Client");
+        const clientName = clientParty?.entity_name || "Extracted Client";
+
+        const newContracts: Contract[] = resData.contracts.map((c: any, idx: number) => ({
+          id: Date.now() + idx,
+          clientName: clientName,
+          exists: "yes",
+          aligns: "yes",
+          document: publicUrl, // Use the Cloudflare URL
+          contract_amount: c.contract_amount,
+          period: c.period,
+          text_block: c.text_block
+        }));
+
+        setContracts((prev) => [...prev, ...newContracts]);
+        toast.success(`Successfully extracted ${newContracts.length} contracts.`);
+      } else {
+        toast.error("No contracts found in the document.");
+      }
+    } catch (error: any) {
+      console.error("Contract extraction error:", error);
+      toast.error("Failed to extract contract details.");
+    } finally {
+      setIsParsing(false);
+      toast.dismiss(loadingToast);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  };
+
   const handleAddContract = (contract: Contract): void => {
     setContracts((prev) => [...prev, contract]);
     setShowForm(false);
+  };
+
+  const handleDeleteContract = (id: number): void => {
+    setContracts((prev) => prev.filter(c => c.id !== id));
+    toast.success("Contract removed.");
   };
 
   const handleContinue = async (): Promise<void> => {
@@ -306,6 +420,7 @@ function ContractsPageImpl(): React.JSX.Element {
             business_nature: businessNature,
             contracts_count: contracts.length,
             contracts: contracts,
+            contract_extraction_data: extractionData,
           }
         }, token);
         router.push(`/employer/sections/financial?recordId=${recordId}`);
@@ -330,9 +445,8 @@ function ContractsPageImpl(): React.JSX.Element {
     } catch { return {}; }
   }
 
-  const summary = getSummary(contracts);
   const hasContracts = contracts.length > 0;
-  const hasIssues = summary.failed > 0;
+  const hasIssues = contracts.some(c => c.exists === "no" || c.aligns === "no");
   const needsContracts = businessNature === "b2b" || businessNature === "healthcare";
   const canContinue = !needsContracts || (needsContracts && hasContracts);
 
@@ -385,35 +499,45 @@ function ContractsPageImpl(): React.JSX.Element {
             {hasContracts && (
               <div style={{ backgroundColor: "white", borderRadius: "10px", border: "1px solid #E2E8F0", padding: "20px 24px", marginBottom: "14px" }}>
                 <h3 style={{ margin: "0 0 16px", fontSize: "15px", fontWeight: "700", color: "#0F172A" }}>Added Contracts</h3>
-                <div style={{ display: "grid", gridTemplateColumns: "2fr 1.2fr 1.5fr 1fr 1fr", padding: "0 4px 10px", borderBottom: "1px solid #F1F5F9" }}>
-                  {["Client Name", "Contract Exists", "Aligns with Activity", "Document", "Status"].map((h) => (
+                <div style={{ display: "grid", gridTemplateColumns: "1.5fr 1fr 1fr 1fr 1fr 0.8fr 0.5fr", padding: "0 4px 10px", borderBottom: "1px solid #F1F5F9" }}>
+                  {["Client Name", "Amount", "Period", "Exists", "Aligns", "Doc", ""].map((h) => (
                     <div key={h} style={{ fontSize: "12.5px", color: "#94A3B8", fontWeight: "500" }}>{h}</div>
                   ))}
                 </div>
-                {contracts.map((c) => {
-                  const status = getContractStatus(c);
-                  return (
-                    <div key={c.id} style={{ display: "grid", gridTemplateColumns: "2fr 1.2fr 1.5fr 1fr 1fr", padding: "13px 4px", borderBottom: "1px solid #F8FAFC", alignItems: "center" }}>
-                      <div style={{ fontSize: "14px", color: "#0F172A", fontWeight: "500" }}>{c.clientName}</div>
-                      <div>{c.exists === "yes" ? <GreenCheck /> : <YellowWarn />}</div>
-                      <div>{c.aligns === "yes" ? <GreenCheck /> : c.aligns === "no" ? <YellowWarn /> : <span style={{ color: "#94A3B8" }}>—</span>}</div>
-                      <div style={{ fontSize: "14px", color: "#94A3B8" }}>{c.document ? "✓" : "—"}</div>
-                      <div>
-                        {status === "pass" ? (
-                          <span style={{ display: "inline-flex", alignItems: "center", gap: "5px", padding: "4px 12px", borderRadius: "20px", fontSize: "12px", fontWeight: "600", backgroundColor: "#0852C9", color: "white" }}>
-                            <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><circle cx="6" cy="6" r="5" stroke="white" strokeWidth="1.2" fill="none" /><path d="M3.5 6l2 2L8.5 4" stroke="white" strokeWidth="1.2" strokeLinecap="round" /></svg>
-                            Pass
-                          </span>
-                        ) : (
-                          <span style={{ display: "inline-flex", alignItems: "center", gap: "5px", padding: "4px 12px", borderRadius: "20px", fontSize: "12px", fontWeight: "600", backgroundColor: "#DC2626", color: "white" }}>
-                            <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M6 1.5L1 10h10L6 1.5z" stroke="white" strokeWidth="1.1" fill="none" /><path d="M6 5.5v2M6 9v.3" stroke="white" strokeWidth="1" strokeLinecap="round" /></svg>
-                            Fail
-                          </span>
-                        )}
-                      </div>
+                {contracts.map((c) => (
+                  <div key={c.id} style={{ display: "grid", gridTemplateColumns: "1.5fr 1fr 1fr 1fr 1fr 0.8fr 0.5fr", padding: "13px 4px", borderBottom: "1px solid #F8FAFC", alignItems: "center" }}>
+                    <div style={{ fontSize: "14px", color: "#0F172A", fontWeight: "500" }}>{c.clientName}</div>
+                    <div style={{ fontSize: "13px", color: "#64748B" }}>{c.contract_amount || "—"}</div>
+                    <div style={{ fontSize: "13px", color: "#64748B" }}>{c.period || "—"}</div>
+                    <div>{c.exists === "yes" ? <GreenCheck /> : <YellowWarn />}</div>
+                    <div>{c.aligns === "yes" ? <GreenCheck /> : c.aligns === "no" ? <YellowWarn /> : <span style={{ color: "#94A3B8" }}>—</span>}</div>
+                    <div style={{ fontSize: "14px", color: "#94A3B8" }}>
+                      {c.document ? (
+                        <a 
+                          href={c.document.startsWith('http') ? c.document : '#'} 
+                          target="_blank" 
+                          rel="noopener noreferrer"
+                          style={{ 
+                            color: c.document.startsWith('http') ? "#0852C9" : "#94A3B8", 
+                            textDecoration: c.document.startsWith('http') ? "underline" : "none",
+                            cursor: c.document.startsWith('http') ? "pointer" : "default"
+                          }}
+                        >
+                          {c.document.startsWith('http') ? "View" : "✓"}
+                        </a>
+                      ) : "—"}
                     </div>
-                  );
-                })}
+                    <div>
+                      <button 
+                        onClick={() => handleDeleteContract(c.id)}
+                        style={{ border: "none", backgroundColor: "transparent", cursor: "pointer", padding: "4px", display: "flex", alignItems: "center", justifyContent: "center" }}
+                        title="Delete contract"
+                      >
+                        <TrashIcon />
+                      </button>
+                    </div>
+                  </div>
+                ))}
               </div>
             )}
 
@@ -421,45 +545,44 @@ function ContractsPageImpl(): React.JSX.Element {
             {showForm ? (
               <AddContractForm onAdd={handleAddContract} onCancel={() => setShowForm(false)} />
             ) : (
-              <button
-                onClick={() => setShowForm(true)}
-                style={{
-                  width: "100%", padding: "14px", backgroundColor: "white",
-                  border: "1.5px solid #E2E8F0", borderRadius: "10px",
-                  fontSize: "14px", fontWeight: "500", color: "#374151",
-                  cursor: "pointer", display: "flex", alignItems: "center",
-                  justifyContent: "center", gap: "8px", marginBottom: "14px",
-                }}
-              >
-                <span style={{ fontSize: "16px" }}>+</span> Add Client Contract
-              </button>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px", marginBottom: "14px" }}>
+                <button
+                  onClick={() => setShowForm(true)}
+                  style={{
+                    width: "100%", padding: "14px", backgroundColor: "white",
+                    border: "1.5px solid #E2E8F0", borderRadius: "10px",
+                    fontSize: "14px", fontWeight: "500", color: "#374151",
+                    cursor: "pointer", display: "flex", alignItems: "center",
+                    justifyContent: "center", gap: "8px",
+                  }}
+                >
+                  <span style={{ fontSize: "16px" }}>+</span> Add Manually
+                </button>
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={isParsing}
+                  style={{
+                    width: "100%", padding: "14px", backgroundColor: "#F0F9FF",
+                    border: "1.5px solid #0EA5E9", borderRadius: "10px",
+                    fontSize: "14px", fontWeight: "600", color: "#0369A1",
+                    cursor: isParsing ? "not-allowed" : "pointer", display: "flex", alignItems: "center",
+                    justifyContent: "center", gap: "8px",
+                  }}
+                >
+                  {isParsing ? <SpinnerIcon color="#0EA5E9" /> : <CloudIcon />}
+                  {isParsing ? "Scanning..." : "Scan Contract PDF"}
+                </button>
+                <input
+                  type="file"
+                  accept=".pdf"
+                  ref={fileInputRef}
+                  onChange={handleContractUpload}
+                  style={{ display: "none" }}
+                />
+              </div>
             )}
           </>
         )}
-
-        {/* Summary bar */}
-        {hasContracts && !showForm && (
-          <div style={{
-            backgroundColor: "white", borderRadius: "10px",
-            border: `1.5px solid ${hasIssues ? "#FCA5A5" : "#E2E8F0"}`,
-            padding: "16px 20px", marginBottom: "14px",
-            display: "flex", justifyContent: "space-between", alignItems: "center",
-          }}>
-            <div>
-              <div style={{ fontSize: "14px", fontWeight: "700", color: "#0F172A" }}>Contract Validation Summary</div>
-              <div style={{ fontSize: "13px", color: "#64748B", marginTop: "3px" }}>
-                {summary.passed} passed, {summary.failed} failed, {summary.requireAction} require action
-              </div>
-            </div>
-            <span style={{
-              padding: "5px 14px", borderRadius: "20px", fontSize: "12.5px", fontWeight: "700",
-              backgroundColor: hasIssues ? "#DC2626" : "#0852C9", color: "white",
-            }}>
-              {hasIssues ? "Issues Found" : "All Valid"}
-            </span>
-          </div>
-        )}
-
         {/* Continue */}
         <button
           onClick={canContinue && !isSubmitting ? handleContinue : undefined}
