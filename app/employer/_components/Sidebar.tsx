@@ -8,6 +8,7 @@ import {
   Users,
   Briefcase,
   CalendarCheck,
+  Phone,
   UserCheck,
   CreditCard,
   HelpCircle,
@@ -37,8 +38,9 @@ const Sidebar = () => {
     },
     { id: 3, name: 'Post Compliance', route: '/employer/dashboard/post-compliance', icon: Briefcase },
     { id: 4, name: 'Call Agents', route: '/employer/dashboard/call-agents', icon: CalendarCheck },
-    { id: 5, name: 'Staff List', route: '/employer/dashboard/staff-list', icon: CalendarCheck },
-    { id: 6, name: 'Records', route: '/employer/dashboard/records', icon: User2 },
+    { id: 5, name: 'Calls & Numbers', route: '/employer/dashboard/calls-numbers', icon: Phone },
+    { id: 6, name: 'Staff List', route: '/employer/dashboard/staff-list', icon: CalendarCheck },
+    { id: 7, name: 'Records', route: '/employer/dashboard/records', icon: User2 },
     
   ];
 

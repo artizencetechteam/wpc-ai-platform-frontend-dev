@@ -356,23 +356,18 @@ function BankStatementImpl() {
               <label style={{ display: "block", fontSize: "14px", fontWeight: "600", color: "#374151", marginBottom: "8px" }}>
                 Bank Name *
               </label>
-              <select
+              <input
+                type="text"
                 value={bankName}
                 onChange={(e) => setBankName(e.target.value)}
+                placeholder="Enter Bank Name"
                 style={{
                   width: "100%", padding: "12px 16px", borderRadius: "10px",
                   border: "1.5px solid #D1D5DB", fontSize: "15px", outline: "none",
                   boxSizing: "border-box", color: "#0F172A", backgroundColor: "white",
-                  transition: "border-color 0.2s",
-                  cursor: "pointer"
+                  transition: "border-color 0.2s"
                 }}
-              >
-                <option value="">Select a Bank...</option>
-                <option value="Other Banks">Other Banks</option>
-                <option value="NATWEST">NATWEST</option>
-                <option value="SANTANDER">SANTANDER</option>
-                <option value="VIRGIN">VIRGIN</option>
-              </select>
+              />
             </div>
 
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px", marginBottom: "24px" }}>
@@ -497,8 +492,11 @@ function BankStatementImpl() {
                       })
                       .map((t) => {
                         const isEditing = editingId === t.id;
+                        const isLarge = t.flags?.is_large || ((!t.flags || Object.keys(t.flags).length === 0) && t.amount >= 2000);
+                        const isSalary = t.flags?.is_salary;
+                        const rowBg = isLarge ? "#FEE2E2" : (isSalary ? "#DCFCE7" : "transparent");
                         return (
-                          <div key={t.id} style={{ display: "grid", gridTemplateColumns: "1fr 1.2fr 1fr 2fr 1fr 1fr", padding: "12px 4px", borderBottom: "1px solid #F1F5F9", alignItems: "center" }}>
+                          <div key={t.id} style={{ display: "grid", gridTemplateColumns: "1fr 1.2fr 1fr 2fr 1fr 1fr", padding: "12px 4px", borderBottom: "1px solid #F1F5F9", alignItems: "center", backgroundColor: rowBg }}>
                             {isEditing ? (
                               <>
                                 <div style={{ fontSize: "13px", color: "#374151", padding: "4px" }}>{editValues?.date || "—"}</div>

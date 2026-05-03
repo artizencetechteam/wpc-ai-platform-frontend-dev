@@ -858,8 +858,11 @@ function InvestmentsStep({ onNext, onPrev, onSave, initialTransactions, initialO
                 return true;
               }).map((t) => {
                 const isEditing = editingId === t.id;
+                const isLarge = t.flags?.is_large || ((!t.flags || Object.keys(t.flags).length === 0) && t.amount >= 2000);
+                const isSalary = t.flags?.is_salary;
+                const rowBg = isLarge ? "#FEE2E2" : (isSalary ? "#DCFCE7" : "transparent");
                 return (
-                  <div key={t.id} style={{ display: "grid", gridTemplateColumns: "1fr 1.2fr 1fr 2fr 1fr 1fr", padding: "12px 4px", borderBottom: "1px solid #F1F5F9", alignItems: "center" }}>
+                  <div key={t.id} style={{ display: "grid", gridTemplateColumns: "1fr 1.2fr 1fr 2fr 1fr 1fr", padding: "12px 4px", borderBottom: "1px solid #F1F5F9", alignItems: "center", backgroundColor: rowBg }}>
                     {isEditing ? (
                       <>
                         <div style={{ fontSize: "13px", color: "#374151", padding: "4px" }}>{editValues?.date || "—"}</div>

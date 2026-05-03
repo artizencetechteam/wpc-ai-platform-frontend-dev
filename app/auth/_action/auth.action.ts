@@ -22,7 +22,18 @@ type ActionResult = {
 
 
 const extractAccessToken = (data: any): string | null => {
-  let raw = data?.access ?? data?.token ?? data?.access_token ?? data?.key ?? data?.jwt ?? data?.accessToken ?? null;
+  let raw =
+    data?.access ??
+    data?.token ??
+    data?.access_token ??
+    data?.key ??
+    data?.jwt ??
+    data?.accessToken ??
+    data?.token?.access ??
+    data?.token?.token ??
+    data?.token?.access_token ??
+    data?.token?.key ??
+    null;
   if (!raw) return null;
 
  
@@ -40,7 +51,12 @@ const extractAccessToken = (data: any): string | null => {
 };
 
 const extractRefreshToken = (data: any): string | null =>
-  data?.refresh ?? data?.refresh_token ?? data?.refreshToken ?? null;
+  data?.refresh ??
+  data?.refresh_token ??
+  data?.refreshToken ??
+  data?.token?.refresh ??
+  data?.token?.refresh_token ??
+  null;
 
 const extractSessionToken = (data: any): string | null =>
   data?.session_token ?? data?.session_id ?? data?.sessionID ?? data?.sessionId ?? data?.session ?? null;
