@@ -2,12 +2,19 @@ import { NextResponse } from "next/server";
 
 export async function POST(req: Request) {
   try {
-    const formData = await req.formData();
+    const { file_url } = await req.json();
     
-    // Forward to the external API
-    const response = await fetch("https://wpc-ai-agents-1.onrender.com/rtw/extract", {
+    if (!file_url) {
+      return NextResponse.json({ error: "Missing file_url" }, { status: 400 });
+    }
+
+    // Forward to the new external API
+    const response = await fetch("http://37.27.113.235:8231/parse_rtw_work_document/", {
       method: "POST",
-      body: formData,
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ file_url }),
     });
 
     if (!response.ok) {

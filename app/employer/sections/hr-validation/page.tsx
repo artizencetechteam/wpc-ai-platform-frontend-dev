@@ -456,7 +456,7 @@ function HRRecordsValidationImpl() {
         nationality: rtwForm.nationality || "Migrant",
         HRValidationRecord_id: hrRecordId,
 
-        rtw_document_url: rtwForm.fileKey || undefined,
+        rtw_document_url: rtwForm.fileUrl || undefined,
         check_date: rtwForm.check_date || null,
         company_name: rtwForm.company_name || null,
         passport_number: rtwForm.documentNumber || null,
@@ -694,14 +694,20 @@ function HRRecordsValidationImpl() {
                         setIsExtracting(true);
                         const loadingToast = toast.loading("AI is extracting details...");
                         try {
-                          const formData = new FormData();
-                          formData.append("file", f);
-                          const res = await axios.post("/api/extract-rtw", formData);
-                          if (res.data.success) {
-                            const { employee_name, nationality, visa_expiry_date, reference_number, check_date, company_name } = res.data.extracted;
+                          const res = await axios.post("/api/extract-rtw", { file_url: url });
+                          const data = res.data;
+                          
+                          if (data.status === "success" && data.rtw_work_document) {
+                            const extracted = data.rtw_work_document;
                             
-                            const toISODate = (val?: string | null) => {
+                            const toISO = (val?: string | null) => {
                               if (!val) return "";
+                              // Handle DD-MM-YYYY or DD/MM/YYYY
+                              const separator = val.includes("-") ? "-" : val.includes("/") ? "/" : null;
+                              if (separator && val.split(separator)[0].length === 2) {
+                                const [d, m, y] = val.split(separator);
+                                return `${y}-${m}-${d}`;
+                              }
                               const d = new Date(val);
                               if (isNaN(d.getTime())) return val;
                               const year = d.getFullYear();
@@ -712,21 +718,19 @@ function HRRecordsValidationImpl() {
 
                             setRtwForm(prev => ({
                               ...prev,
-                              name: employee_name || prev.name,
-                              nationality: nationality || prev.nationality,
-                              expiryDate: visa_expiry_date || prev.expiryDate,
-                              documentNumber: reference_number || prev.documentNumber,
-                              check_date: toISODate(check_date) || prev.check_date,
-                              company_name: (company_name || "").replace(/\s+/g, " ").trim() || prev.company_name,
+                              name: extracted.employee_name || prev.name,
+                              nationality: prev.nationality || "Migrant",
+                              documentNumber: extracted.reference_number || prev.documentNumber,
+                              check_date: toISO(extracted.date_of_check) || prev.check_date,
+                              company_name: (extracted.company_name || "").replace(/\s+/g, " ").trim() || prev.company_name,
                             }));
-                            if (res.data.extracted.name_extraction_failed) {
-                              toast.error("Name could not be extracted automatically. Please enter manually.");
-                            } else {
-                              toast.success("Details extracted successfully!");
-                            }
+                            toast.success("Details extracted successfully!");
+                          } else {
+                            toast.error(data.message || "Extraction failed.");
                           }
                         } catch (err) {
                           console.error("Extraction error in modal:", err);
+                          toast.error("Failed to parse document.");
                         } finally {
                           setIsExtracting(false);
                           toast.dismiss(loadingToast);
@@ -760,6 +764,12 @@ function HRRecordsValidationImpl() {
                   <label style={lbl}>Company Name</label>
                   <input type="text" value={rtwForm.company_name} onChange={(e) => setRtwForm({ ...rtwForm, company_name: e.target.value })} placeholder="e.g. My Company Ltd" style={inputStyle} />
                 </div>
+                {rtwForm.fileUrl && (
+                  <div style={{ marginBottom: "14px" }}>
+                    <label style={lbl}>Document URL</label>
+                    <input type="text" value={rtwForm.fileUrl} readOnly style={{ ...inputStyle, backgroundColor: "#F1F5F9", cursor: "not-allowed", fontSize: "12px" }} />
+                  </div>
+                )}
                 <div style={{ marginBottom: "22px" }}>
                   <label style={lbl}>Employment Start Date *</label>
                   <input type="date" value={rtwForm.startDate} onChange={(e) => setRtwForm({ ...rtwForm, startDate: e.target.value })} style={inputStyle} />

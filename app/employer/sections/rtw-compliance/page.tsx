@@ -22,6 +22,7 @@ type Employee = {
   passportNumber?: string;
   check_date?: string | null;
   company_name?: string | null;
+  rtw_document_url?: string | null;
 };
 
 // --- Icons ---
@@ -69,6 +70,24 @@ function getInitial(name?: string): string {
   return (name || "?").trim()[0].toUpperCase();
 }
 
+function toISODate(val?: string | null): string | null {
+  if (!val) return null;
+  let normalized = val;
+  // Handle DD-MM-YYYY or DD/MM/YYYY
+  const separator = val.includes("-") ? "-" : val.includes("/") ? "/" : null;
+  if (separator && val.split(separator)[0].length === 2) {
+    const [d, m, y] = val.split(separator);
+    normalized = `${y}-${m}-${d}`;
+  }
+  const d = new Date(normalized);
+  if (isNaN(d.getTime())) return val;
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  // The backend expects Datetime format: YYYY-MM-DDThh:mm
+  return `${year}-${month}-${day}T00:00:00`;
+}
+
 // --- NoMigrantScreen ---
 function NoMigrantScreen({ onContinue }: { onContinue: () => void }) {
   return (
@@ -83,12 +102,12 @@ function NoMigrantScreen({ onContinue }: { onContinue: () => void }) {
         <p style={{ margin: "4px 0 0", fontSize: "14px", color: "#64748B", maxWidth: "380px", lineHeight: "1.65" }}>
           All employees are British/Irish and skip RTW validation.
         </p>
-        <button 
+        <button
           onClick={() => {
             const btn = event?.currentTarget as HTMLButtonElement;
             if (btn) btn.disabled = true;
             onContinue();
-          }} 
+          }}
           style={{
             marginTop: "12px", padding: "11px 28px", backgroundColor: "#0852C9",
             color: "white", border: "none", borderRadius: "8px",
@@ -123,22 +142,15 @@ function RTWVerificationScreen({ migrants, onBackToStaffList, onContinue, onSave
   const [manualName, setManualName] = useState("");
   const [checkDate, setCheckDate] = useState("");
   const [companyName, setCompanyName] = useState("");
+  const [rtwDocumentUrl, setRtwDocumentUrl] = useState<string | null>(employee?.rtw_document_url || null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (employee) {
-      const toISODate = (val?: string | null) => {
-        if (!val) return "";
-        const d = new Date(val);
-        if (isNaN(d.getTime())) return val;
-        const year = d.getFullYear();
-        const month = String(d.getMonth() + 1).padStart(2, "0");
-        const day = String(d.getDate()).padStart(2, "0");
-        return `${year}-${month}-${day}`;
-      };
-      setCheckDate(toISODate(extractedData?.check_date || employee.check_date));
+      setCheckDate(toISODate(extractedData?.check_date || employee.check_date) || "");
       const rawCompany = extractedData?.company_name || employee.company_name || "";
       setCompanyName(rawCompany.replace(/\s+/g, " ").trim());
+      setRtwDocumentUrl(employee.rtw_document_url || null);
     }
   }, [currentIndex, extractedData, employee]);
 
@@ -146,29 +158,56 @@ function RTWVerificationScreen({ migrants, onBackToStaffList, onContinue, onSave
     const file = e.target.files?.[0];
     if (!file) return;
 
-    const formData = new FormData();
-    formData.append("file", file);
-
     setIsExtracting(true);
-    const loadingToast = toast.loading("Analyzing RTW document...");
+    const loadingToast = toast.loading("Uploading and analyzing RTW document...");
 
     try {
-      const response = await axios.post("/api/extract-rtw", formData);
+      // 1. Get presigned URL from Cloudflare R2 proxy
+      const presignRes = await axios.post("/api/upload-presign", {
+        fileName: `RTW Documents/${file.name}`,
+        fileType: file.type || "application/pdf",
+      });
+      const { presignedUrl, publicUrl } = presignRes.data;
+
+      // 2. PUT directly to Cloudflare R2
+      await axios.put(presignedUrl, file, {
+        headers: { "Content-Type": file.type || "application/pdf" },
+      });
+
+      setRtwDocumentUrl(publicUrl);
+
+      // 3. Extract RTW details from the stored URL
+      const response = await axios.post("/api/extract-rtw", { file_url: publicUrl });
       const data = response.data;
 
-      if (data.success) {
-        setExtractedData(data.extracted);
-        if (data.extracted.name_extraction_failed) {
-          toast.error("Name could not be extracted automatically. Manual input required.");
-        } else {
-          toast.success("RTW details extracted successfully!");
-        }
+      if (data.status === "success" && data.rtw_work_document) {
+        const extracted = data.rtw_work_document;
+        const newData = {
+          employee_name: extracted.employee_name,
+          company_name: extracted.company_name,
+          check_date: extracted.date_of_check,
+          reference_number: extracted.reference_number
+        };
+        setExtractedData(newData);
+
+        // 4. Immediately save to backend to ensure data is not lost
+        await onSaveEmployee(employee.id, {
+          employee_full_name: extracted.employee_name || employee.employee_full_name,
+          rtw_document_url: publicUrl,
+          passport_number: extracted.reference_number,
+          check_date: toISODate(extracted.date_of_check),
+          company_name: extracted.company_name
+        });
+
+        toast.success("RTW details extracted and saved!");
       } else {
-        toast.error(data.message || "Extraction failed.");
+        // Even if extraction fails, we should save the URL if we have it
+        await onSaveEmployee(employee.id, { rtw_document_url: publicUrl });
+        toast.error(data.message || "Extraction failed, but document was uploaded.");
       }
     } catch (err: any) {
-      console.error("RTW extraction error:", err);
-      toast.error(err.response?.data?.details || "Failed to parse RTW document.");
+      console.error("RTW upload/extraction error:", err);
+      toast.error(err.response?.data?.details || "Failed to upload or parse RTW document.");
     } finally {
       setIsExtracting(false);
       toast.dismiss(loadingToast);
@@ -214,11 +253,11 @@ function RTWVerificationScreen({ migrants, onBackToStaffList, onContinue, onSave
             Migrant Worker{formattedStart ? ` • Employment Start: ${formattedStart}` : ""}
           </div>
         </div>
-        
+
         {/* Upload/Change Button */}
         <div>
           <input type="file" ref={fileInputRef} onChange={handleFileUpload} style={{ display: "none" }} accept=".pdf,.png,.jpg,.jpeg" />
-          <button 
+          <button
             onClick={() => fileInputRef.current?.click()}
             disabled={isExtracting}
             style={{
@@ -230,10 +269,31 @@ function RTWVerificationScreen({ migrants, onBackToStaffList, onContinue, onSave
             }}
           >
             {isExtracting ? <SpinnerIcon color="#0EA5E9" /> : <CloudIcon />}
-            {isExtracting ? "Analyzing..." : hasDocument ? "Change Document" : "Upload RTW Document"}
+            {isExtracting ? "Analyzing..." : (rtwDocumentUrl || hasDocument) ? "Change Document" : "Upload RTW Document"}
           </button>
         </div>
       </div>
+
+      {/* View Document Link if exists */}
+      {((rtwDocumentUrl && rtwDocumentUrl !== "null") || (employee?.rtw_document_url && employee.rtw_document_url !== "null")) && (
+        <div style={{ marginBottom: "20px" }}>
+          <a
+            href={rtwDocumentUrl || employee?.rtw_document_url || "#"}
+            target="_blank"
+            rel="noreferrer"
+            style={{
+              display: "inline-flex", alignItems: "center", gap: "6px",
+              fontSize: "13px", color: "#0852C9", fontWeight: "600", textDecoration: "none",
+              padding: "6px 12px", backgroundColor: "#EFF6FF", borderRadius: "6px", border: "1px solid #DBEAFE"
+            }}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" />
+            </svg>
+            View Uploaded RTW Document
+          </a>
+        </div>
+      )}
 
       {/* RTW Verification */}
       <div style={{
@@ -242,7 +302,7 @@ function RTWVerificationScreen({ migrants, onBackToStaffList, onContinue, onSave
       }}>
         <h3 style={{ margin: "0 0 5px", fontSize: "16px", fontWeight: "700", color: "#0F172A" }}>RTW Document Verification</h3>
         <p style={{ margin: "0 0 18px", fontSize: "13px", color: "#64748B" }}>Verify the uploaded RTW document and extracted information</p>
-        
+
         {!hasDocument && !extractedData ? (
           <div style={{
             display: "flex", alignItems: "flex-start", gap: "11px",
@@ -273,9 +333,9 @@ function RTWVerificationScreen({ migrants, onBackToStaffList, onContinue, onSave
                 <div style={{ fontSize: "11px", color: "#6B7280", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: "4px" }}>Employee Name</div>
                 {extractedData?.name_extraction_failed ? (
                   <div style={{ marginTop: "4px" }}>
-                    <input 
-                      type="text" 
-                      value={manualName} 
+                    <input
+                      type="text"
+                      value={manualName}
                       onChange={(e) => setManualName(e.target.value)}
                       placeholder="Enter employee name manually"
                       style={{
@@ -334,7 +394,6 @@ function RTWVerificationScreen({ migrants, onBackToStaffList, onContinue, onSave
 
       {/* Navigation */}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-...
         <button onClick={onBackToStaffList} style={{
           padding: "10px 20px", backgroundColor: "white", color: "#374151",
           border: "1.5px solid #D1D5DB", borderRadius: "8px",
@@ -348,23 +407,18 @@ function RTWVerificationScreen({ migrants, onBackToStaffList, onContinue, onSave
             fontSize: "13.5px", fontWeight: "500", cursor: "pointer",
           }}>← Previous</button>}
           {currentIndex < migrants.length - 1 ? (
-            <button 
+            <button
               onClick={async () => {
                 setIsSubmitting(true);
                 try {
-                  const data = {
-                    passport_number: extractedData?.reference_number || employee.documentNumber,
-                    check_date: checkDate || null,
-                    company_name: companyName || null
-                  };
-                  await onSaveEmployee(employee.id, data);
+                  await new Promise(resolve => setTimeout(resolve, 500));
                   setCurrentIndex(currentIndex + 1);
                   setExtractedData(null);
                   setManualName("");
                 } finally {
                   setIsSubmitting(false);
                 }
-              }} 
+              }}
               disabled={isSubmitting}
               style={{
                 padding: "10px 18px", backgroundColor: isSubmitting ? "#93ABDE" : "#0852C9", color: "white",
@@ -377,21 +431,16 @@ function RTWVerificationScreen({ migrants, onBackToStaffList, onContinue, onSave
               Next Employee →
             </button>
           ) : (
-            <button 
+            <button
               onClick={async () => {
                 setIsSubmitting(true);
                 try {
-                  const data = {
-                    passport_number: extractedData?.reference_number || employee.documentNumber,
-                    check_date: checkDate || null,
-                    company_name: companyName || null
-                  };
-                  await onSaveEmployee(employee.id, data);
+                  await new Promise(resolve => setTimeout(resolve, 1000));
                   onContinue();
                 } finally {
                   // Keep it true if we are navigating away
                 }
-              }} 
+              }}
               disabled={isSubmitting}
               style={{
                 padding: "10px 18px", backgroundColor: isSubmitting ? "#93ABDE" : "#0852C9", color: "white",
@@ -433,7 +482,7 @@ function RTWComplianceImpl() {
         if (token) {
           const queryId = searchParams.get("recordId") || searchParams.get("id");
           let id = queryId || sessionStorage.getItem("current_hr_record_id");
-          
+
           if (!id) {
             const hrRes = await listHRValidationRecordsAction(token);
             if (hrRes.success && hrRes.data && hrRes.data.length > 0) {
@@ -453,11 +502,12 @@ function RTWComplianceImpl() {
                 employee_full_name: e.employee_full_name,
                 nationality: e.nationality || "Migrant",
                 documentType: e.rtw_document_url ? "Uploaded Document" : "",
-                documentNumber: e.passport_number || (e.rtw_document_url ? e.rtw_document_url : ""),
+                documentNumber: e.passport_number || "", // Don't fallback to URL here
                 startDate: e.employment_start_date,
                 passportNumber: e.passport_number,
                 check_date: e.check_date,
                 company_name: e.company_name,
+                rtw_document_url: e.rtw_document_url,
               }));
               setEmployees(mapped);
               sessionStorage.setItem(`hr_employees_${id}`, JSON.stringify(mapped));
@@ -468,12 +518,12 @@ function RTWComplianceImpl() {
       } catch (err) {
         console.error("Error fetching RTW employees via API", err);
       }
-      
+
       if (!dataLoaded && recordId) {
         try {
           const saved = sessionStorage.getItem(`hr_employees_${recordId}`);
           if (saved) setEmployees(JSON.parse(saved));
-        } catch {}
+        } catch { }
       }
       setLoaded(true);
     }
@@ -488,18 +538,25 @@ function RTWComplianceImpl() {
     try {
       const p = JSON.parse(sessionStorage.getItem(`hr_progress_${recordId}`) || "{}");
       sessionStorage.setItem(`hr_progress_${recordId}`, JSON.stringify({ ...p, rtw: true }));
-    } catch {}
+    } catch { }
   };
 
   const handleSaveEmployee = async (empId: string, data: any) => {
+    console.log(`[handleSaveEmployee] Saving for ${empId}:`, data);
     try {
       const token = getClientToken();
-      await updateEmployeeAction(Number(empId), data, token);
-      
-      // Update local state so it persists if we go back/forward
-      setEmployees(prev => prev.map(emp => emp.id === empId ? { ...emp, ...data } : emp));
+      const res = await updateEmployeeAction(Number(empId), data, token);
+      console.log(`[handleSaveEmployee] Response:`, res);
+
+      if (res.success) {
+        // Update local state so it persists if we go back/forward
+        setEmployees(prev => prev.map(emp => emp.id === empId ? { ...emp, ...data } : emp));
+      } else {
+        toast.error(`Failed to save: ${res.message}`);
+      }
     } catch (err) {
       console.error("Error saving employee RTW data:", err);
+      toast.error("An error occurred while saving.");
     }
   };
 
@@ -541,12 +598,12 @@ function RTWComplianceImpl() {
     <div style={{ fontFamily: "'Segoe UI', system-ui, sans-serif", backgroundColor: "#F1F5F9", minHeight: "100vh" }}>
       <HRValidationTabs currentTabId="rtw" hrRecordId={recordId} onBack={handleBack} />
       {loaded && (hasMigrants
-        ? <RTWVerificationScreen 
-            migrants={migrants} 
-            onBackToStaffList={handleBack} 
-            onContinue={handleContinueToBank} 
-            onSaveEmployee={handleSaveEmployee}
-          />
+        ? <RTWVerificationScreen
+          migrants={migrants}
+          onBackToStaffList={handleBack}
+          onContinue={handleContinueToBank}
+          onSaveEmployee={handleSaveEmployee}
+        />
         : <NoMigrantScreen onContinue={handleContinueToBank} />
       )}
     </div>
