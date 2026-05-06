@@ -423,7 +423,7 @@ export default function EmployerDashboard() {
                         className={`border-b border-gray-50 hover:bg-gray-50 transition cursor-pointer ${
                           expandedRow === task.id ? 'bg-blue-50/20' : ''
                         }`}
-                        onClick={() => toggleRow(task.id)}
+                        onClick={() => router.push(`/employer/sections/company?recordId=${task.id}`)}
                       >
                         <td className="px-3 sm:px-4 py-3 text-[#1D1D1D] font-medium">
                           #{task.id}
@@ -453,20 +453,17 @@ export default function EmployerDashboard() {
                         <td className="px-3 sm:px-4 py-3">
                           <div className="flex items-center gap-2">
                             <button
-                              className="text-[#6B7280] hover:text-[#0852C9] transition"
+                              className="text-[#CBD5E1] hover:text-[#0852C9] transition p-1"
                               onClick={(e) => {
                                 e.stopPropagation();
-                                router.push(`/employer/sections/company?recordId=${task.id}`);
+                                toggleRow(task.id);
                               }}
-                              title="Go to HR Validation"
+                              title={expandedRow === task.id ? "Collapse Staff List" : "Expand Staff List"}
                             >
-                              <Eye size={15} />
-                            </button>
-                            <span className="text-[#CBD5E1]">
                               {expandedRow === task.id
                                 ? <ChevronUp size={14} />
                                 : <ChevronDown size={14} />}
-                            </span>
+                            </button>
                           </div>
                         </td>
                       </tr>
