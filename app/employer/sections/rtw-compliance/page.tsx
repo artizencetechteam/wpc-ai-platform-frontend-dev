@@ -144,6 +144,23 @@ function RTWVerificationScreen({ migrants, onBackToStaffList, onContinue, onSave
   const [companyName, setCompanyName] = useState("");
   const [rtwDocumentUrl, setRtwDocumentUrl] = useState<string | null>(employee?.rtw_document_url || null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [isEditing, setIsEditing] = useState(false);
+  const [manualRefNumber, setManualRefNumber] = useState("");
+
+
+  // ── RTW Compliance: check date must be BEFORE employment start date ──────────
+  const getRTWComplianceStatus = () => {
+    if (!checkDate || !employee?.startDate) return 'pending';
+    
+    // Normalize to YYYY-MM-DD for reliable comparison regardless of time/timezone
+    const checkStr = checkDate.split('T')[0];
+    const startStr = employee.startDate.split('T')[0];
+    
+    if (!checkStr || !startStr) return 'pending';
+    return checkStr < startStr ? 'compliant' : 'non-compliant';
+  };
+  const complianceStatus = getRTWComplianceStatus();
+  const isNonCompliant = complianceStatus === 'non-compliant';
 
   useEffect(() => {
     if (employee) {
@@ -151,6 +168,9 @@ function RTWVerificationScreen({ migrants, onBackToStaffList, onContinue, onSave
       const rawCompany = extractedData?.company_name || employee.company_name || "";
       setCompanyName(rawCompany.replace(/\s+/g, " ").trim());
       setRtwDocumentUrl(employee.rtw_document_url || null);
+      setManualName(employee.employee_full_name || "");
+      setManualRefNumber(employee.documentNumber || employee.passportNumber || "");
+      setIsEditing(false); // Reset edit mode when switching employees
     }
   }, [currentIndex, extractedData, employee]);
 
@@ -212,6 +232,26 @@ function RTWVerificationScreen({ migrants, onBackToStaffList, onContinue, onSave
       setIsExtracting(false);
       toast.dismiss(loadingToast);
       if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  };
+
+  const handleSaveManualCorrection = async () => {
+    setIsSubmitting(true);
+    const loadingToast = toast.loading("Saving corrections...");
+    try {
+      await onSaveEmployee(employee.id, {
+        employee_full_name: manualName,
+        check_date: checkDate, // Already in T00:00:00 format from setCheckDate
+        company_name: companyName,
+        passport_number: manualRefNumber
+      });
+      setIsEditing(false);
+      toast.success("Details updated successfully!");
+    } catch (err) {
+      toast.error("Failed to save corrections.");
+    } finally {
+      setIsSubmitting(false);
+      toast.dismiss(loadingToast);
     }
   };
 
@@ -320,34 +360,65 @@ function RTWVerificationScreen({ migrants, onBackToStaffList, onContinue, onSave
           </div>
         ) : (
           <div style={{
-            padding: "16px 18px", backgroundColor: "#F0FDF4",
-            borderRadius: "8px", border: "1.5px solid #BBF7D0",
+            padding: "16px 18px",
+            backgroundColor: isNonCompliant ? "#FFF5F5" : "#F0FDF4",
+            borderRadius: "8px",
+            border: isNonCompliant ? "1.5px solid #FCA5A5" : "1.5px solid #BBF7D0",
           }}>
-            <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "14px" }}>
-              <div style={{ color: "#166534", fontSize: "14px", fontWeight: "700" }}>✓ {extractedData ? "Extracted Information" : "Document on File"}</div>
+            {/* Compliance status header */}
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "14px" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                {isNonCompliant ? (
+                  <div style={{ color: "#DC2626", fontSize: "14px", fontWeight: "700", display: "flex", alignItems: "center", gap: "6px" }}>
+                    <AlertTriangleIcon />
+                    {extractedData ? "Extracted Information" : "Document on File"} - Non-Compliant
+                  </div>
+                ) : (
+                  <div style={{ color: "#166534", fontSize: "14px", fontWeight: "700" }}>✓ {extractedData ? "Extracted Information" : "Document on File"}</div>
+                )}
+              </div>
+              
+              {!isEditing ? (
+                <button 
+                  onClick={() => setIsEditing(true)}
+                  style={{
+                    fontSize: "12px", color: "#0852C9", fontWeight: "600",
+                    background: "none", border: "none", cursor: "pointer",
+                    textDecoration: "underline"
+                  }}
+                >
+                  Edit Details Manually
+                </button>
+              ) : (
+                <button 
+                  onClick={() => setIsEditing(false)}
+                  style={{
+                    fontSize: "12px", color: "#64748B", fontWeight: "600",
+                    background: "none", border: "none", cursor: "pointer"
+                  }}
+                >
+                  Cancel Edit
+                </button>
+              )}
             </div>
 
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "16px" }}>
-              {/* Employee Name / Manual Input */}
+              {/* Employee Name */}
               <div>
                 <div style={{ fontSize: "11px", color: "#6B7280", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: "4px" }}>Employee Name</div>
-                {extractedData?.name_extraction_failed ? (
-                  <div style={{ marginTop: "4px" }}>
-                    <input
-                      type="text"
-                      value={manualName}
-                      onChange={(e) => setManualName(e.target.value)}
-                      placeholder="Enter employee name manually"
-                      style={{
-                        width: "100%", padding: "8px 10px", borderRadius: "6px",
-                        border: "1.5px solid #FCA5A5", fontSize: "13px", outline: "none"
-                      }}
-                    />
-                    <div style={{ fontSize: "11px", color: "#DC2626", marginTop: "3px" }}>Auto-extraction failed. Please enter manually.</div>
-                  </div>
+                {isEditing || extractedData?.name_extraction_failed ? (
+                  <input
+                    type="text"
+                    value={manualName}
+                    onChange={(e) => setManualName(e.target.value)}
+                    style={{
+                      width: "100%", padding: "8px 10px", borderRadius: "6px",
+                      border: "1px solid #CBD5E1", fontSize: "13px", outline: "none"
+                    }}
+                  />
                 ) : (
                   <div style={{ fontSize: "14px", fontWeight: "600", color: "#0F172A" }}>
-                    {extractedData?.employee_name || employee.employee_full_name}
+                    {manualName || employee.employee_full_name}
                   </div>
                 )}
               </div>
@@ -355,32 +426,103 @@ function RTWVerificationScreen({ migrants, onBackToStaffList, onContinue, onSave
               {/* Check Date */}
               <div>
                 <div style={{ fontSize: "11px", color: "#6B7280", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: "4px" }}>Check Date</div>
-                <div style={{ fontSize: "14px", fontWeight: "600", color: "#0F172A" }}>
-                  {checkDate ? formatDate(checkDate) : "N/A"}
-                </div>
+                {isEditing ? (
+                  <input
+                    type="date"
+                    value={checkDate ? checkDate.split('T')[0] : ""}
+                    onChange={(e) => setCheckDate(toISODate(e.target.value) || "")}
+                    style={{
+                      width: "100%", padding: "8px 10px", borderRadius: "6px",
+                      border: "1px solid #CBD5E1", fontSize: "13px", outline: "none"
+                    }}
+                  />
+                ) : (
+                  <div style={{ fontSize: "14px", fontWeight: "600", color: isNonCompliant ? "#DC2626" : "#0F172A" }}>
+                    {checkDate ? formatDate(checkDate) : "N/A"}
+                    {isNonCompliant && <span style={{ fontSize: "11px", marginLeft: "6px", color: "#DC2626" }}>⚠ After start date</span>}
+                  </div>
+                )}
               </div>
 
               {/* Company Name */}
               <div>
                 <div style={{ fontSize: "11px", color: "#6B7280", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: "4px" }}>Company Name</div>
-                <div style={{ fontSize: "14px", fontWeight: "600", color: "#0F172A" }}>
-                  {companyName || "N/A"}
-                </div>
+                {isEditing ? (
+                  <input
+                    type="text"
+                    value={companyName}
+                    onChange={(e) => setCompanyName(e.target.value)}
+                    style={{
+                      width: "100%", padding: "8px 10px", borderRadius: "6px",
+                      border: "1px solid #CBD5E1", fontSize: "13px", outline: "none"
+                    }}
+                  />
+                ) : (
+                  <div style={{ fontSize: "14px", fontWeight: "600", color: "#0F172A" }}>
+                    {companyName || "N/A"}
+                  </div>
+                )}
               </div>
 
               {/* Reference Number */}
-              {(extractedData?.reference_number || employee.documentNumber) && (
-                <div>
-                  <div style={{ fontSize: "11px", color: "#6B7280", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: "4px" }}>Reference Number</div>
+              <div>
+                <div style={{ fontSize: "11px", color: "#6B7280", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: "4px" }}>Reference Number</div>
+                {isEditing ? (
+                  <input
+                    type="text"
+                    value={manualRefNumber}
+                    onChange={(e) => setManualRefNumber(e.target.value)}
+                    style={{
+                      width: "100%", padding: "8px 10px", borderRadius: "6px",
+                      border: "1px solid #CBD5E1", fontSize: "13px", outline: "none"
+                    }}
+                  />
+                ) : (
                   <div style={{ fontSize: "14px", fontWeight: "600", color: "#0F172A" }}>
-                    {extractedData?.reference_number || employee.documentNumber || "N/A"}
+                    {manualRefNumber || "N/A"}
                   </div>
-                </div>
-              )}
+                )}
+              </div>
             </div>
 
+            {/* Save Button in Edit Mode */}
+            {isEditing && (
+              <div style={{ marginTop: "20px", display: "flex", justifyContent: "flex-end" }}>
+                <button
+                  onClick={handleSaveManualCorrection}
+                  disabled={isSubmitting}
+                  style={{
+                    padding: "8px 20px", backgroundColor: "#0852C9", color: "white",
+                    border: "none", borderRadius: "6px", fontSize: "13px", fontWeight: "600",
+                    cursor: "pointer", display: "flex", alignItems: "center", gap: "6px"
+                  }}
+                >
+                  {isSubmitting && <SpinnerIcon color="#fff" />}
+                  Save Corrections
+                </button>
+              </div>
+            )}
+
+            {/* Non-compliance warning banner */}
+            {isNonCompliant && (
+              <div style={{
+                marginTop: "16px", paddingTop: "14px",
+                borderTop: "1px solid #FCA5A5",
+                display: "flex", alignItems: "flex-start", gap: "10px",
+              }}>
+                <AlertTriangleIcon />
+                <div>
+                  <div style={{ fontSize: "13px", fontWeight: "700", color: "#DC2626", marginBottom: "3px" }}>Compliance Violation Detected</div>
+                  <div style={{ fontSize: "12.5px", color: "#B91C1C", lineHeight: "1.55" }}>
+                    RTW check was conducted on <strong>{formatDate(checkDate)}</strong>, which is on or after the employment start date (<strong>{formattedStart}</strong>).
+                    The Right to Work check must be completed <em>before</em> employment begins.
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* Routing / Reason (Metadata from AI) */}
-            {extractedData?.routing && (
+            {extractedData?.routing && !isNonCompliant && (
               <div style={{ marginTop: "16px", paddingTop: "14px", borderTop: "1px solid #BBF7D0" }}>
                 <div style={{ fontSize: "11px", color: "#64748B", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: "4px" }}>Compliance Context</div>
                 <div style={{ fontSize: "12.5px", color: "#166534", lineHeight: "1.5" }}>
