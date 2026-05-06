@@ -64,6 +64,7 @@ interface FinancialData {
   paymentsReflected?: string | null;
   futureEngagement?: string | null;
   bank_statement_url?: string | null;
+  monthly_summary?: any | null;
   contract_verification_results?: VerificationResult[] | null;
 }
 
@@ -175,7 +176,6 @@ const MONTH_MAP: Record<string, string> = {
 
 function formatDate(raw: string | null | undefined): string {
   if (!raw) return "";
-  // Expected format: "DD Mon YY" e.g. "16 Jan 26"
   const parts = raw.trim().split(/\s+/);
   if (parts.length !== 3) return raw;
   const [dd, mon, yy] = parts;
@@ -540,50 +540,41 @@ function InvestmentsStep({ onNext, onPrev, onSave, initialTransactions, initialO
       });
 
       const resData = response.data;
-      const bankStatement = resData.bank_statement || {};
-      const extractionResult = resData.data || resData || {};
-      const fetchedTransactions = bankStatement.all_transactions || extractionResult.transactions || [];
-
-      if (!Array.isArray(fetchedTransactions)) {
-        toast.error("Invalid response format from bank statement parser.");
+      if (resData.status !== "success") {
+        toast.error(resData.message || "Failed to parse bank statement");
         return;
       }
 
+      const bankStatement = resData.bank_statement || {};
+      const fetchedTransactions = bankStatement.all_transactions || [];
+
       const mapped: Transaction[] = fetchedTransactions.map((t: any, idx: number) => {
-        const hasPaidOut = t.paid_out !== null && t.paid_out !== undefined && t.paid_out !== "" && String(t.paid_out).trim() !== "0";
-        const hasPaidIn = t.paid_in !== null && t.paid_in !== undefined && t.paid_in !== "" && String(t.paid_in).trim() !== "0";
-
-        const amtValue = hasPaidOut ? t.paid_out : (hasPaidIn ? t.paid_in : (t.amount || t.value || 0));
-        const amt = typeof amtValue === 'string' ? parseFloat(amtValue.replace(/[^\d.-]/g, '')) : amtValue;
-
-        const isIncoming = hasPaidIn || (!hasPaidOut && (t.type === "credit" || t.direction === "in" || (typeof amt === "number" && amt >= 0)));
-
+        const amt = t.paid_out || t.paid_in || t.amount || t.value || 0;
         return {
           id: Date.now() + idx,
-          date: formatDate(t.date),
-          amount: Math.abs(amt || 0),
-          reference: t.description || t.reference || t.memo || "Unknown",
-          type: isIncoming ? "incoming" : "outgoing",
-          status: getTransactionStatus(t.description || t.reference || t.memo || ""),
+          date: t.date || formatDate(t.parsed_date),
+          amount: Math.abs(amt),
+          reference: t.description || t.reference || "Unknown",
+          type: t.paid_in ? "incoming" : "outgoing",
+          status: getTransactionStatus(t.description || ""),
           flags: t.flags || {}
         };
       });
 
-      // Auto-fill opening/closing balance
-      const extractedOpening = bankStatement.opening_balance ?? extractionResult.opening_balance ?? extractionResult.openingBalance ?? null;
-      const extractedClosing = bankStatement.closing_balance ?? extractionResult.closing_balance ?? extractionResult.closingBalance ?? null;
+      const stats = bankStatement.stats || {};
+      const extractedOpening = stats.opening_balance ?? null;
+      const extractedClosing = stats.closing_balance ?? null;
+      
       if (extractedOpening !== null) setManualOpening(String(extractedOpening));
       if (extractedClosing !== null) setManualClosing(String(extractedClosing));
 
-      const extractedPaidIn = bankStatement.total_paid_in ?? extractionResult.total_paid_in ?? null;
-      const extractedPaidOut = bankStatement.total_paid_out ?? extractionResult.total_paid_out ?? null;
-
       onSave({ 
         bank_statement_url: publicUrl,
-        payment_incoming_total: extractedPaidIn,
-        payment_outgoing_total: extractedPaidOut,
-        incoming: extractedPaidIn !== null ? Number(extractedPaidIn) : undefined,
-        outgoing: extractedPaidOut !== null ? Number(extractedPaidOut) : undefined
+        payment_incoming_total: stats.total_incoming ?? null,
+        payment_outgoing_total: stats.total_outgoing ?? null,
+        incoming: stats.total_incoming ?? undefined,
+        outgoing: stats.total_outgoing ?? undefined,
+        monthly_summary: stats.monthly_summary ?? null
       });
 
       if (mapped.length === 0) {
@@ -1222,6 +1213,9 @@ function FinancialPageImpl(): React.JSX.Element {
                 bank_statement_url: hrRecord.bank_statement_url ?? prev.bank_statement_url,
                 payment_incoming_total: hrRecord.payment_incoming_total ?? prev.payment_incoming_total,
                 payment_outgoing_total: hrRecord.payment_outgoing_total ?? prev.payment_outgoing_total,
+                monthly_summary: hrRecord.monthly_summary
+                  ? (typeof hrRecord.monthly_summary === 'string' ? JSON.parse(hrRecord.monthly_summary) : hrRecord.monthly_summary)
+                  : prev.monthly_summary,
                 // Also sync Step 2 fields if they are missing
                 incoming: hrRecord.payment_incoming_total != null ? parseFloat(hrRecord.payment_incoming_total) : prev.incoming,
                 outgoing: hrRecord.payment_outgoing_total != null ? parseFloat(hrRecord.payment_outgoing_total) : prev.outgoing,
@@ -1302,6 +1296,7 @@ function FinancialPageImpl(): React.JSX.Element {
           bank_statement_url: financialData.bank_statement_url,
           payment_incoming_total: financialData.incoming,
           payment_outgoing_total: financialData.outgoing,
+          monthly_summary: financialData.monthly_summary,
           result_complete_sections: {
             ...currentSaved,
             contract_verification_results: financialData.contract_verification_results,
