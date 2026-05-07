@@ -306,9 +306,25 @@ function SummaryPageImpl(): React.JSX.Element {
       ? "Company NOT registered with pension scheme"
       : "Pension registration not confirmed";
 
+  // ── RTW: check if any migrant's RTW check date is on or after their employment start date ──
+  const nonCompliantRTWEmployees = migrants.filter(e => {
+    const checkDate = e.check_date;
+    const startDate = e.employment_start_date || e.startDate;
+    if (!checkDate || !startDate) return false;
+    
+    // Normalize to YYYY-MM-DD for reliable comparison
+    const checkStr = checkDate.split('T')[0];
+    const startStr = startDate.split('T')[0];
+    
+    return checkStr >= startStr; // non-compliant: check is on or after employment start
+  });
+  const hasNonCompliantRTW = nonCompliantRTWEmployees.length > 0;
+
   const rtwSubtitle = migrants.length === 0
     ? "No migrant workers — RTW checks skipped"
-    : `${migrants.length} migrant worker${migrants.length > 1 ? "s" : ""} — RTW verified`;
+    : hasNonCompliantRTW
+      ? `${nonCompliantRTWEmployees.length} RTW check(s) conducted after employment start date`
+      : `${migrants.length} migrant worker${migrants.length > 1 ? "s" : ""} — RTW verified`;
 
   const contractsSubtitle = contractsTotal === 0
     ? "No contracts added"
@@ -332,6 +348,13 @@ function SummaryPageImpl(): React.JSX.Element {
   // --- Calculate issues for each workflow ---
   const rtwIssues: string[] = [];
   if (!progress.rtw) rtwIssues.push("Section has not been reviewed or completed.");
+  if (hasNonCompliantRTW) {
+    nonCompliantRTWEmployees.forEach(e => {
+      rtwIssues.push(
+        `${e.employee_full_name}: RTW check (${e.check_date ? new Date(e.check_date).toLocaleDateString('en-GB') : 'N/A'}) was on or after employment start date (${e.employment_start_date || e.startDate ? new Date(e.employment_start_date || e.startDate).toLocaleDateString('en-GB') : 'N/A'}).`
+      );
+    });
+  }
 
   const authIssues: string[] = [];
   if (!progress.auth) authIssues.push("Authorising Officer assessment has not been completed.");
@@ -361,7 +384,7 @@ function SummaryPageImpl(): React.JSX.Element {
       key: "rtw",
       title: "RTW & Start Date Compliance",
       subtitle: rtwSubtitle,
-      compliant: !!progress.rtw || !!manualOverrides.rtw,
+      compliant: (!!progress.rtw && !hasNonCompliantRTW) || !!manualOverrides.rtw,
       issues: !!manualOverrides.rtw ? [] : rtwIssues,
     },
     {

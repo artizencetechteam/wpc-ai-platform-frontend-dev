@@ -97,6 +97,7 @@ function BankStatementImpl() {
   const [manualClosing, setManualClosing] = useState("");
   const [paymentIncomingTotal, setPaymentIncomingTotal] = useState<number | null>(null);
   const [paymentOutgoingTotal, setPaymentOutgoingTotal] = useState<number | null>(null);
+  const [monthlySummary, setMonthlySummary] = useState<any>(null);
   const [employees, setEmployees] = useState<any[]>([]);
   const [transactions, setTransactions] = useState<any[]>([]);
   const [searchDate, setSearchDate] = useState("");
@@ -153,6 +154,10 @@ function BankStatementImpl() {
           }
           if (record.payment_incoming_total !== undefined) setPaymentIncomingTotal(record.payment_incoming_total);
           if (record.payment_outgoing_total !== undefined) setPaymentOutgoingTotal(record.payment_outgoing_total);
+          if (record.monthly_summary) {
+            const ms = typeof record.monthly_summary === "string" ? JSON.parse(record.monthly_summary) : record.monthly_summary;
+            setMonthlySummary(ms);
+          }
         }
       }
     } catch (e) {
@@ -229,42 +234,38 @@ function BankStatementImpl() {
         employee_name: employees.map((e) => e.employee_full_name),
       });
       const resData = response.data;
-      // Support the new { bank_statement: { all_transactions: [...] } } structure
-      const bankStatement = resData.bank_statement || {};
-      const extractionResult = resData.data || resData || {};
-      const fetchedTransactions = bankStatement.all_transactions || extractionResult.transactions || [];
 
-      if (!Array.isArray(fetchedTransactions)) {
-        toast.error("Unexpected response from AI parser.");
+      if (resData.status !== "success") {
+        toast.error(resData.message || "Failed to parse bank statement");
         return;
       }
 
+      const bankStatement = resData.bank_statement || {};
+      const fetchedTransactions = bankStatement.all_transactions || [];
+
       const mapped = fetchedTransactions.map((t: any, idx: number) => {
-        const hasPaidOut = t.paid_out !== null && t.paid_out !== undefined && t.paid_out !== "" && String(t.paid_out).trim() !== "0";
-        const hasPaidIn  = t.paid_in  !== null && t.paid_in  !== undefined && t.paid_in  !== "" && String(t.paid_in).trim()  !== "0";
-        const amtValue = hasPaidOut ? t.paid_out : (hasPaidIn ? t.paid_in : (t.amount || t.value || 0));
-        const amt = typeof amtValue === "string" ? parseFloat(amtValue.replace(/[^\d.-]/g, "")) : amtValue;
-        const isIncoming = hasPaidIn || (!hasPaidOut && (t.type === "credit" || t.direction === "in" || (typeof amt === "number" && amt >= 0)));
+        const amt = t.paid_out || t.paid_in || t.amount || t.value || 0;
         return {
           id: Date.now() + idx,
-          date: formatDate(t.date),
-          amount: Math.abs(amt || 0),
-          reference: t.description || t.reference || t.memo || "Unknown",
-          type: isIncoming ? "incoming" : "outgoing",
-          status: getTransactionStatus(t.description || t.reference || t.memo || ""),
+          date: t.date || formatDate(t.parsed_date),
+          amount: Math.abs(amt),
+          reference: t.description || t.reference || "Unknown",
+          type: t.paid_in ? "incoming" : "outgoing",
+          status: getTransactionStatus(t.description || ""),
           flags: t.flags || {}
         };
       });
 
-      const extractedOpening = bankStatement.opening_balance ?? extractionResult.opening_balance ?? extractionResult.openingBalance ?? null;
-      const extractedClosing = bankStatement.closing_balance ?? extractionResult.closing_balance ?? extractionResult.closingBalance ?? null;
+      const stats = bankStatement.stats || {};
+      const extractedOpening = stats.opening_balance ?? null;
+      const extractedClosing = stats.closing_balance ?? null;
+      
       if (extractedOpening !== null) setManualOpening(String(extractedOpening));
       if (extractedClosing !== null) setManualClosing(String(extractedClosing));
 
-      const extractedPaidIn  = bankStatement.total_paid_in  ?? extractionResult.total_paid_in  ?? null;
-      const extractedPaidOut = bankStatement.total_paid_out ?? extractionResult.total_paid_out ?? null;
-      setPaymentIncomingTotal(extractedPaidIn);
-      setPaymentOutgoingTotal(extractedPaidOut);
+      setPaymentIncomingTotal(stats.total_incoming ?? null);
+      setPaymentOutgoingTotal(stats.total_outgoing ?? null);
+      setMonthlySummary(stats.monthly_summary ?? null);
 
       if (mapped.length === 0) {
         toast.success("AI analysis complete — no transactions found.");
@@ -313,6 +314,7 @@ function BankStatementImpl() {
         bank_statement_url: bankStatementUrl,
         payment_incoming_total: paymentIncomingTotal,
         payment_outgoing_total: paymentOutgoingTotal,
+        monthly_summary: monthlySummary,
       }, token);
 
       const pStr = sessionStorage.getItem(`hr_progress_${hrRecordId}`);
@@ -596,6 +598,24 @@ function BankStatementImpl() {
               ];
 
               const getRealData = () => {
+                if (monthlySummary && Object.keys(monthlySummary).length > 0) {
+                  return Object.entries(monthlySummary).map(([key, val]: [string, any]) => {
+                    const parts = key.split("-");
+                    if (parts.length !== 3) return null;
+                    const [, mm, yyyy] = parts;
+                    const d = new Date(parseInt(yyyy), parseInt(mm) - 1, 1);
+                    return {
+                      in: val.total_incoming,
+                      out: val.total_outgoing,
+                      label: d.toLocaleString("default", { month: "long" }),
+                      year: parseInt(yyyy),
+                      monthIndex: parseInt(mm) - 1
+                    };
+                  })
+                  .filter((i): i is any => i !== null)
+                  .sort((a, b) => a.year !== b.year ? a.year - b.year : a.monthIndex - b.monthIndex);
+                }
+
                 const months: Record<string, any> = {};
                 transactions.forEach(t => {
                   const parts = t.date.split("-");
@@ -716,9 +736,9 @@ function BankStatementImpl() {
                   {/* Summary cards */}
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: "12px", padding: "16px 24px" }}>
                     {[
-                      { label: "Total Paid In",  value: data.reduce((s,d) => s+d.in, 0),  color: "#0852C9", bg: "#EFF6FF" },
-                      { label: "Total Paid Out", value: data.reduce((s,d) => s+d.out, 0), color: "#DC2626", bg: "#FEF2F2" },
-                      { label: "Net Cash Flow",  value: data.reduce((s,d) => s+d.in-d.out, 0), color: "#059669", bg: "#ECFDF5" },
+                      { label: "Total Paid In",  value: paymentIncomingTotal ?? data.reduce((s,d) => s+d.in, 0),  color: "#0852C9", bg: "#EFF6FF" },
+                      { label: "Total Paid Out", value: paymentOutgoingTotal ?? data.reduce((s,d) => s+d.out, 0), color: "#DC2626", bg: "#FEF2F2" },
+                      { label: "Net Cash Flow",  value: (paymentIncomingTotal !== null && paymentOutgoingTotal !== null) ? (paymentIncomingTotal - paymentOutgoingTotal) : data.reduce((s,d) => s+d.in-d.out, 0), color: "#059669", bg: "#ECFDF5" },
                     ].map(c => (
                       <div key={c.label} style={{ backgroundColor: c.bg, borderRadius: "10px", padding: "14px 16px" }}>
                         <p style={{ margin: "0 0 4px", fontSize: "11px", fontWeight: "600", color: c.color, textTransform: "uppercase", letterSpacing: "0.5px" }}>{c.label}</p>
