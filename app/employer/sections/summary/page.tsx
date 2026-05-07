@@ -127,6 +127,115 @@ function SummaryPageImpl(): React.JSX.Element {
   const [recordId, setRecordId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isEditMode, setIsEditMode] = useState(false);
+  const [savedHtml, setSavedHtml] = useState<string | null>(null);
+  const [badgeDropdown, setBadgeDropdown] = useState<{ target: HTMLElement, x: number, y: number } | null>(null);
+  const printContainerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (recordId) {
+      const html = sessionStorage.getItem(`report_edits_${recordId}`);
+      if (html) setSavedHtml(html);
+    }
+  }, [recordId]);
+
+  useEffect(() => {
+    const closeDropdown = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      if (target.closest('.editable-badge') || target.closest('.badge-dropdown-container')) return;
+      setBadgeDropdown(null);
+    };
+    window.addEventListener('click', closeDropdown);
+    return () => window.removeEventListener('click', closeDropdown);
+  }, []);
+  useEffect(() => {
+    if (savedHtml && printContainerRef.current) {
+      if (!printContainerRef.current.innerHTML || printContainerRef.current.innerHTML.trim() === "") {
+        printContainerRef.current.innerHTML = savedHtml;
+      }
+    }
+  }, [savedHtml]);
+
+  useEffect(() => {
+    if (printContainerRef.current) {
+      printContainerRef.current.contentEditable = isEditMode ? "true" : "false";
+    }
+  }, [isEditMode]);
+
+  const greenCheckSvg = `<svg width="20" height="20" viewBox="0 0 20 20" fill="none" class="workflow-status-icon"><circle cx="10" cy="10" r="9" stroke="#16A34A" stroke-width="1.4" fill="none"></circle><path d="M6.5 10l2.5 2.5L13.5 7" stroke="#16A34A" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path></svg>`;
+  const redXSvg = `<svg width="20" height="20" viewBox="0 0 20 20" fill="none" class="workflow-status-icon"><circle cx="10" cy="10" r="9" stroke="#DC2626" stroke-width="1.4" fill="none"></circle><path d="M7 7l6 6M13 7l-6 6" stroke="#DC2626" stroke-width="1.5" stroke-linecap="round"></path></svg>`;
+
+  const greenCheckBigSvg = `<svg width="52" height="52" viewBox="0 0 52 52" fill="none"><circle cx="26" cy="26" r="25" fill="#DCFCE7" stroke="#16A34A" stroke-width="1.5"></circle><path d="M15 26l8 8 14-16" stroke="#16A34A" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"></path></svg>`;
+  const yellowWarnBigSvg = `<svg width="52" height="52" viewBox="0 0 52 52" fill="none"><circle cx="26" cy="26" r="25" fill="#FEF9C3" stroke="#F59E0B" stroke-width="1.5"></circle><path d="M26 14L10 40h32L26 14z" stroke="#F59E0B" stroke-width="2" fill="none" stroke-linejoin="round"></path><path d="M26 22v9M26 34v1.5" stroke="#F59E0B" stroke-width="2" stroke-linecap="round"></path></svg>`;
+
+  const allBadges = [
+    { label: "Compliant", bg: "#16A34A", isPositive: true },
+    { label: "Non-Compliant", bg: "#DC2626", isPositive: false },
+    { label: "Pending", bg: "#F59E0B", isPositive: false },
+    { label: "Migrant Worker", bg: "#7C3AED" },
+    { label: "British/Irish", bg: "#0852C9" },
+    { label: "Pension Checked", bg: "#0852C9", isPositive: true },
+    { label: "Opted Out", bg: "#64748B" },
+    { label: "High Risk", bg: "#991B1B", isPositive: false },
+    { label: "Verified", bg: "#059669", isPositive: true }
+  ];
+
+  const handleContainerClick = (e: React.MouseEvent) => {
+    if (!isEditMode) return;
+    const target = e.target as HTMLElement;
+    if (target.classList.contains('editable-badge')) {
+      e.stopPropagation();
+      e.nativeEvent.stopPropagation();
+      const rect = target.getBoundingClientRect();
+      setBadgeDropdown({
+        target,
+        x: rect.left + window.scrollX,
+        y: rect.bottom + window.scrollY + 4
+      });
+    }
+  };
+
+  const selectBadge = (badge: { label: string, bg: string, isPositive?: boolean }) => {
+    if (badgeDropdown) {
+      const { target } = badgeDropdown;
+      target.innerText = badge.label;
+      target.style.backgroundColor = badge.bg;
+
+      const nextSibling = target.nextElementSibling;
+      if (nextSibling && nextSibling.tagName.toLowerCase() === 'svg') {
+        if (badge.isPositive !== undefined) {
+          nextSibling.outerHTML = badge.isPositive ? greenCheckSvg : redXSvg;
+        }
+      }
+
+      if (badge.isPositive !== undefined) {
+        const overallCard = target.closest('.card-print');
+        if (overallCard && overallCard.querySelector('h3')?.innerText.includes('Overall Status')) {
+          (overallCard as HTMLElement).style.border = badge.isPositive ? "2px solid #E2E8F0" : "2px solid #FCA5A5";
+
+          const headerDiv = overallCard.previousElementSibling;
+          if (headerDiv && headerDiv.querySelector('h2')) {
+            const h2 = headerDiv.querySelector('h2');
+            const p = headerDiv.querySelector('p');
+            const svg = headerDiv.querySelector('svg');
+            if (h2) h2.innerText = badge.isPositive ? "Validation Complete" : "Validation Complete with Issues";
+            if (p) p.innerText = badge.isPositive ? "All workflows passed. Your organisation is fully compliant." : "Some workflows require attention before full compliance.";
+            if (svg) svg.outerHTML = badge.isPositive ? greenCheckBigSvg : yellowWarnBigSvg;
+          }
+        }
+
+        const workflowItem = target.closest('.workflow-item-card');
+        if (workflowItem) {
+          (workflowItem as HTMLElement).style.border = badge.isPositive ? "1px solid transparent" : "1px solid #FEE2E2";
+          const issuesList = workflowItem.querySelector('.workflow-issues-list') as HTMLElement;
+          if (issuesList) {
+            issuesList.style.display = badge.isPositive ? "none" : "block";
+          }
+        }
+      }
+    }
+    setBadgeDropdown(null);
+  };
 
   // Dynamic data from other sections
   const [companyName, setCompanyName] = useState<string>("");
@@ -203,7 +312,7 @@ function SummaryPageImpl(): React.JSX.Element {
         if (savedName) setCompanyName(savedName);
       }
 
-        // Financial data and contracts are now hydrated solely from the fetchRecord API call below
+      // Financial data and contracts are now hydrated solely from the fetchRecord API call below
 
       // Pension data
       if (id) {
@@ -277,7 +386,7 @@ function SummaryPageImpl(): React.JSX.Element {
       } else {
         setLoading(false);
       }
-    } catch {}
+    } catch { }
   }, [searchParams]);
 
   const migrants = employees.filter(
@@ -311,11 +420,11 @@ function SummaryPageImpl(): React.JSX.Element {
     const checkDate = e.check_date;
     const startDate = e.employment_start_date || e.startDate;
     if (!checkDate || !startDate) return false;
-    
+
     // Normalize to YYYY-MM-DD for reliable comparison
     const checkStr = checkDate.split('T')[0];
     const startStr = startDate.split('T')[0];
-    
+
     return checkStr >= startStr; // non-compliant: check is on or after employment start
   });
   const hasNonCompliantRTW = nonCompliantRTWEmployees.length > 0;
@@ -331,7 +440,7 @@ function SummaryPageImpl(): React.JSX.Element {
     : `${contractsPassed}/${contractsTotal} contract${contractsTotal > 1 ? "s" : ""} validated`;
 
   const hasFlaggedTransactions = financialData.transactions?.some(t => t.status === "fail") || false;
-  const financialCompliant = !!progress.financial && 
+  const financialCompliant = !!progress.financial &&
     (financialData.balance ?? 0) >= 10425 &&
     (financialData.netCashFlow == null || financialData.netCashFlow > 0) &&
     !hasFlaggedTransactions &&
@@ -438,9 +547,10 @@ function SummaryPageImpl(): React.JSX.Element {
         sessionStorage.removeItem(`company_name_${recordId}`);
         sessionStorage.removeItem(`bank_name_${recordId}`);
         sessionStorage.removeItem(`pension_data_${recordId}`);
+        sessionStorage.removeItem(`report_edits_${recordId}`);
       }
       sessionStorage.removeItem("current_hr_record_id");
-    } catch {}
+    } catch { }
     router.push("/employer/sections/company");
   };
 
@@ -490,268 +600,328 @@ function SummaryPageImpl(): React.JSX.Element {
         <HRValidationTabs currentTabId="summary" hrRecordId={recordId} onBack={() => router.back()} />
       </div>
 
-      <div className="print-container" style={{ maxWidth: "860px", margin: "30px auto", padding: "0 24px" }}>
-        {loading ? (
-          <div style={{ display: "flex", justifyContent: "center", padding: "100px" }}><SpinnerIcon /></div>
-        ) : (
-          <>
-            {/* Header */}
-        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center", marginBottom: "28px", position: "relative" }}>
-          <div className="no-print" style={{ position: "absolute", top: 0, right: 0 }}>
-            <button 
-              onClick={() => { setActiveCommentSection("General"); setCommentText(comments["General"] || ""); }}
-              style={{ display: "flex", alignItems: "center", gap: "6px", backgroundColor: "white", color: "#0852C9", border: "1.5px solid #0852C9", padding: "8px 16px", borderRadius: "8px", cursor: "pointer", fontWeight: "600", fontSize: "13px", transition: "all 0.2s" }}
-            >
-              <MessageIcon /> Provide Feedback
-            </button>
-          </div>
-          {allCompliant ? <GreenCheckBig /> : <YellowWarnBig />}
-          {companyName && (
-            <p style={{ margin: "8px 0 0", fontSize: "13px", fontWeight: "600", color: "#0852C9", letterSpacing: "0.3px" }}>
-              {companyName}
-            </p>
-          )}
-          <h2 style={{ margin: "10px 0 4px", fontSize: "22px", fontWeight: "700", color: "#0F172A" }}>
-            {allCompliant ? "Validation Complete" : "Validation Complete with Issues"}
-          </h2>
-          <p style={{ margin: 0, fontSize: "13.5px", color: "#64748B" }}>
-            {allCompliant
-              ? "All workflows passed. Your organisation is fully compliant."
-              : "Some workflows require attention before full compliance."}
-          </p>
+      <div style={{ position: "relative", maxWidth: "860px", margin: "30px auto" }}>
+        <div className="no-print" style={{ display: "flex", justifyContent: "flex-end", gap: "8px", padding: "0 24px", marginBottom: "20px" }}>
+          <button
+            onClick={() => {
+              if (isEditMode) {
+                if (printContainerRef.current) {
+                  const html = printContainerRef.current.innerHTML;
+                  setSavedHtml(html);
+                  if (recordId) sessionStorage.setItem(`report_edits_${recordId}`, html);
+                }
+                setIsEditMode(false);
+              } else {
+                setIsEditMode(true);
+              }
+            }}
+            style={{ display: "flex", alignItems: "center", gap: "6px", backgroundColor: isEditMode ? "#0852C9" : "white", color: isEditMode ? "white" : "#0852C9", border: "1.5px solid #0852C9", padding: "8px 16px", borderRadius: "8px", cursor: "pointer", fontWeight: "600", fontSize: "13px", transition: "all 0.2s" }}
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
+            {isEditMode ? "Finish Editing" : "Edit"}
+          </button>
+          <button
+            onClick={() => { setActiveCommentSection("General"); setCommentText(comments["General"] || ""); }}
+            style={{ display: "flex", alignItems: "center", gap: "6px", backgroundColor: "white", color: "#0852C9", border: "1.5px solid #0852C9", padding: "8px 16px", borderRadius: "8px", cursor: "pointer", fontWeight: "600", fontSize: "13px", transition: "all 0.2s" }}
+          >
+            <MessageIcon /> Provide Feedback
+          </button>
         </div>
 
-        {/* Overall status */}
-        <div className="card-print" style={{
-          backgroundColor: "white", borderRadius: "12px",
-          border: `2px solid ${allCompliant ? "#E2E8F0" : "#FCA5A5"}`,
-          padding: "20px 24px", marginBottom: "16px",
-        }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "18px" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-              <h3 style={{ margin: 0, fontSize: "16px", fontWeight: "700", color: "#0F172A" }}>Overall Status</h3>
+        <div
+          id="print-container-content"
+          ref={printContainerRef}
+          className="print-container"
+          style={{ padding: "0 24px", outline: isEditMode ? "2px dashed #CBD5E1" : "none", borderRadius: "12px", transition: "outline 0.2s", minHeight: "100px" }}
+          suppressContentEditableWarning={true}
+          onClick={handleContainerClick}
+        >
+          {!savedHtml && (
+            loading ? (
+              <div style={{ display: "flex", justifyContent: "center", padding: "100px" }}><SpinnerIcon /></div>
+            ) : (
+              <>
+                {/* Header */}
+                <div style={{ display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center", marginBottom: "28px", position: "relative" }}>
+                  {allCompliant ? <GreenCheckBig /> : <YellowWarnBig />}
+                  {companyName && (
+                    <p style={{ margin: "8px 0 0", fontSize: "13px", fontWeight: "600", color: "#0852C9", letterSpacing: "0.3px" }}>
+                      {companyName}
+                    </p>
+                  )}
+                  <h2 style={{ margin: "10px 0 4px", fontSize: "22px", fontWeight: "700", color: "#0F172A" }}>
+                    {allCompliant ? "Validation Complete" : "Validation Complete with Issues"}
+                  </h2>
+                  <p style={{ margin: 0, fontSize: "13.5px", color: "#64748B" }}>
+                    {allCompliant
+                      ? "All workflows passed. Your organisation is fully compliant."
+                      : "Some workflows require attention before full compliance."}
+                  </p>
+                </div>
 
-            </div>
-            <span style={{
-              padding: "5px 14px", borderRadius: "20px", fontSize: "12.5px", fontWeight: "700",
-              backgroundColor: allCompliant ? "#16A34A" : "#DC2626", color: "white",
-            }}>
-              {allCompliant ? "Compliant" : "Non-Compliant"}
-            </span>
-          </div>
-          <div style={{ display: "grid", gridTemplateColumns: `repeat(${overallStats.length}, 1fr)`, gap: "10px" }}>
-            {overallStats.map((s) => (
-              <div key={s.label} style={{ backgroundColor: "#F8FAFC", borderRadius: "8px", padding: "14px 12px", textAlign: "center" }}>
-                <div style={{ fontSize: "26px", fontWeight: "700", color: "#0F172A" }}>{s.value}</div>
-                <div style={{ fontSize: "11.5px", color: "#64748B", marginTop: "3px" }}>{s.label}</div>
-              </div>
-            ))}
-          </div>
-        </div>
+                {/* Overall status */}
+                <div className="card-print" style={{
+                  backgroundColor: "white", borderRadius: "12px",
+                  border: `2px solid ${allCompliant ? "#E2E8F0" : "#FCA5A5"}`,
+                  padding: "20px 24px", marginBottom: "16px",
+                }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "18px" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                      <h3 style={{ margin: 0, fontSize: "16px", fontWeight: "700", color: "#0F172A" }}>Overall Status</h3>
 
-        {/* Financial highlight card (shown only if financial data exists) */}
-        {(financialData.balance != null || financialData.incoming != null) && (
-          <div className="card-print" style={{
-            backgroundColor: "white", borderRadius: "12px", border: "1px solid #E2E8F0",
-            padding: "18px 24px", marginBottom: "16px", position: "relative"
-          }}>
-            <div style={{
-              display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "12px",
-            }}>
-            {financialData.balance != null && (
-              <div style={{ textAlign: "center" }}>
-                <div style={{ fontSize: "11px", color: "#64748B", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: "4px" }}>Closing Balance</div>
-                <div style={{ fontSize: "20px", fontWeight: "700", color: financialData.balance >= 10425 ? "#16A34A" : "#DC2626" }}>
-                  £{financialData.balance.toLocaleString()}
-                </div>
-              </div>
-            )}
-            {financialData.incoming != null && (
-              <div style={{ textAlign: "center" }}>
-                <div style={{ fontSize: "11px", color: "#64748B", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: "4px" }}>Total Incoming</div>
-                <div style={{ fontSize: "20px", fontWeight: "700", color: "#166534" }}>
-                  £{financialData.incoming.toLocaleString()}
-                </div>
-              </div>
-            )}
-            {financialData.outgoing != null && (
-              <div style={{ textAlign: "center" }}>
-                <div style={{ fontSize: "11px", color: "#64748B", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: "4px" }}>Total Outgoing</div>
-                <div style={{ fontSize: "20px", fontWeight: "700", color: "#DC2626" }}>
-                  £{financialData.outgoing.toLocaleString()}
-                </div>
-              </div>
-            )}
-            {financialData.netCashFlow != null && (
-              <div style={{ textAlign: "center" }}>
-                <div style={{ fontSize: "11px", color: "#64748B", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: "4px" }}>Net Cash Flow</div>
-                <div style={{ fontSize: "20px", fontWeight: "700", color: financialData.netCashFlow >= 0 ? "#166534" : "#DC2626" }}>
-                  {financialData.netCashFlow >= 0 ? "+" : ""}£{Math.abs(financialData.netCashFlow).toLocaleString()}
-                </div>
-              </div>
-            )}
-            </div>
-          </div>
-        )}
-
-        {/* Workflow results */}
-        <div className="card-print" style={{ backgroundColor: "white", borderRadius: "12px", border: "1px solid #E2E8F0", padding: "20px 24px", marginBottom: "16px" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "18px" }}>
-            <div>
-              <h3 style={{ margin: "0 0 4px", fontSize: "16px", fontWeight: "700", color: "#0F172A" }}>Workflow Results</h3>
-              <p style={{ margin: 0, fontSize: "13px", color: "#64748B" }}>Detailed breakdown of each validation workflow</p>
-            </div>
-          </div>
-          {workflows.map((w, i) => {
-            const Icon = workflowIcons[w.key];
-            return (
-              <div key={w.key} style={{
-                padding: "14px 16px", backgroundColor: "#F8FAFC", borderRadius: "8px",
-                marginBottom: i < workflows.length - 1 ? "8px" : 0,
-                border: w.compliant ? "1px solid transparent" : "1px solid #FEE2E2",
-              }}>
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-                    <div style={{ width: "36px", height: "36px", borderRadius: "8px", backgroundColor: "white", border: "1px solid #E2E8F0", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                      <Icon />
                     </div>
-                    <div>
-                      <div style={{ fontSize: "14px", fontWeight: "600", color: "#0F172A" }}>{w.title}</div>
-                      <div style={{ fontSize: "12px", color: "#64748B", marginTop: "2px" }}>{w.subtitle}</div>
-                    </div>
-                  </div>
-                  <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-                    <button 
-                      className="no-print"
-                      onClick={() => { setActiveCommentSection(`Workflow: ${w.title}`); setCommentText(comments[`Workflow: ${w.title}`] || ""); }} 
-                      style={{ background: "none", border: "none", color: "#64748B", cursor: "pointer", display: "flex", alignItems: "center", gap: "4px", fontSize: "12px", fontWeight: "600", padding: "4px", marginRight: "4px" }}
-                      title="Add Comment"
-                    >
-                      <MessageIcon />
-                    </button>
-                    <span 
-                      className="no-print"
-                      onClick={() => handleToggleOverride(w.key)}
-                      style={{
-                        padding: "4px 12px", borderRadius: "20px", fontSize: "12px", fontWeight: "700",
-                        backgroundColor: w.compliant ? "#16A34A" : "#DC2626", color: "white",
-                        cursor: "pointer",
-                        userSelect: "none",
-                        transition: "all 0.2s"
-                      }}
-                      onMouseOver={(e) => e.currentTarget.style.opacity = "0.8"}
-                      onMouseOut={(e) => e.currentTarget.style.opacity = "1"}
-                      title="Click to manually toggle compliance status"
-                    >
-                      {w.compliant ? "Compliant" : "Non-Compliant"}
+                    <span className="editable-badge" style={{
+                      padding: "5px 14px", borderRadius: "20px", fontSize: "12.5px", fontWeight: "700",
+                      backgroundColor: allCompliant ? "#16A34A" : "#DC2626", color: "white",
+                      cursor: isEditMode ? "pointer" : "default"
+                    }}>
+                      {allCompliant ? "Compliant" : "Non-Compliant"}
                     </span>
-                    {w.compliant ? <GreenCircleCheck /> : <RedCircleX />}
                   </div>
-                </div>
-
-                {/* Issues list */}
-                {!w.compliant && w.issues.length > 0 && (
-                  <div style={{ marginTop: "12px", borderTop: "1px solid #FEE2E2", paddingTop: "10px" }}>
-                    {w.issues.map((issue, idx) => (
-                      <div key={idx} style={{ display: "flex", alignItems: "flex-start", gap: "8px", marginBottom: idx < w.issues.length - 1 ? "4px" : 0 }}>
-                        <div style={{ color: "#DC2626", fontSize: "12px", marginTop: "2px" }}>•</div>
-                        <div style={{ fontSize: "12.5px", color: "#991B1B", lineHeight: "1.4" }}>{issue}</div>
+                  <div style={{ display: "grid", gridTemplateColumns: `repeat(${overallStats.length}, 1fr)`, gap: "10px" }}>
+                    {overallStats.map((s) => (
+                      <div key={s.label} style={{ backgroundColor: "#F8FAFC", borderRadius: "8px", padding: "14px 12px", textAlign: "center" }}>
+                        <div style={{ fontSize: "26px", fontWeight: "700", color: "#0F172A" }}>{s.value}</div>
+                        <div style={{ fontSize: "11.5px", color: "#64748B", marginTop: "3px" }}>{s.label}</div>
                       </div>
                     ))}
                   </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-
-        {/* Employee summary */}
-        <div className="card-print" style={{ backgroundColor: "white", borderRadius: "12px", border: "1px solid #E2E8F0", padding: "20px 24px", marginBottom: "24px" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
-            <h3 style={{ margin: 0, fontSize: "16px", fontWeight: "700", color: "#0F172A" }}>Employee Summary</h3>
-          </div>
-          {employees.length === 0 ? (
-            <p style={{ margin: 0, fontSize: "13px", color: "#94A3B8" }}>No employees found.</p>
-          ) : (
-            employees.map((emp) => (
-              <div key={emp.id} style={{
-                display: "flex", alignItems: "center", justifyContent: "space-between",
-                padding: "12px 14px", backgroundColor: "#F8FAFC", borderRadius: "8px", marginBottom: "8px",
-              }}>
-                <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-                  <div style={{
-                    width: "34px", height: "34px", borderRadius: "50%",
-                    backgroundColor: "#EFF6FF", display: "flex", alignItems: "center", justifyContent: "center",
-                    fontSize: "14px", fontWeight: "700", color: "#0852C9", flexShrink: 0,
-                  }}>
-                    {(emp.employee_full_name || "?")[0].toUpperCase()}
-                  </div>
-                  <div>
-                    <div style={{ fontSize: "14px", fontWeight: "600", color: "#0F172A" }}>{emp.employee_full_name}</div>
-                    <div style={{ fontSize: "12px", color: "#64748B", marginTop: "2px" }}>{emp.nationality}</div>
-                  </div>
                 </div>
-                <span style={{
-                  padding: "4px 12px", borderRadius: "20px", fontSize: "12px", fontWeight: "600",
-                  backgroundColor: !["british", "irish", "british/irish"].includes(emp.nationality?.toLowerCase() || "")
-                    ? "#7C3AED" : "#0852C9",
-                  color: "white",
-                }}>
-                  {!["british", "irish", "british/irish"].includes(emp.nationality?.toLowerCase() || "")
-                    ? "Migrant Worker" : "Pension Checked"}
-                </span>
-              </div>
-            ))
+
+                {/* Financial highlight card (shown only if financial data exists) */}
+                {(financialData.balance != null || financialData.incoming != null) && (
+                  <div className="card-print" style={{
+                    backgroundColor: "white", borderRadius: "12px", border: "1px solid #E2E8F0",
+                    padding: "18px 24px", marginBottom: "16px", position: "relative"
+                  }}>
+                    <div style={{
+                      display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "12px",
+                    }}>
+                      {financialData.balance != null && (
+                        <div style={{ textAlign: "center" }}>
+                          <div style={{ fontSize: "11px", color: "#64748B", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: "4px" }}>Closing Balance</div>
+                          <div style={{ fontSize: "20px", fontWeight: "700", color: financialData.balance >= 10425 ? "#16A34A" : "#DC2626" }}>
+                            £{financialData.balance.toLocaleString()}
+                          </div>
+                        </div>
+                      )}
+                      {financialData.incoming != null && (
+                        <div style={{ textAlign: "center" }}>
+                          <div style={{ fontSize: "11px", color: "#64748B", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: "4px" }}>Total Incoming</div>
+                          <div style={{ fontSize: "20px", fontWeight: "700", color: "#166534" }}>
+                            £{financialData.incoming.toLocaleString()}
+                          </div>
+                        </div>
+                      )}
+                      {financialData.outgoing != null && (
+                        <div style={{ textAlign: "center" }}>
+                          <div style={{ fontSize: "11px", color: "#64748B", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: "4px" }}>Total Outgoing</div>
+                          <div style={{ fontSize: "20px", fontWeight: "700", color: "#DC2626" }}>
+                            £{financialData.outgoing.toLocaleString()}
+                          </div>
+                        </div>
+                      )}
+                      {financialData.netCashFlow != null && (
+                        <div style={{ textAlign: "center" }}>
+                          <div style={{ fontSize: "11px", color: "#64748B", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: "4px" }}>Net Cash Flow</div>
+                          <div style={{ fontSize: "20px", fontWeight: "700", color: financialData.netCashFlow >= 0 ? "#166534" : "#DC2626" }}>
+                            {financialData.netCashFlow >= 0 ? "+" : ""}£{Math.abs(financialData.netCashFlow).toLocaleString()}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Workflow results */}
+                <div className="card-print" style={{ backgroundColor: "white", borderRadius: "12px", border: "1px solid #E2E8F0", padding: "20px 24px", marginBottom: "16px" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "18px" }}>
+                    <div>
+                      <h3 style={{ margin: "0 0 4px", fontSize: "16px", fontWeight: "700", color: "#0F172A" }}>Workflow Results</h3>
+                      <p style={{ margin: 0, fontSize: "13px", color: "#64748B" }}>Detailed breakdown of each validation workflow</p>
+                    </div>
+                  </div>
+                  {workflows.map((w, i) => {
+                    const Icon = workflowIcons[w.key];
+                    return (
+                      <div key={w.key} className="workflow-item-card" style={{
+                        padding: "14px 16px", backgroundColor: "#F8FAFC", borderRadius: "8px",
+                        marginBottom: i < workflows.length - 1 ? "8px" : 0,
+                        border: w.compliant ? "1px solid transparent" : "1px solid #FEE2E2",
+                      }}>
+                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                            <div style={{ width: "36px", height: "36px", borderRadius: "8px", backgroundColor: "white", border: "1px solid #E2E8F0", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                              <Icon />
+                            </div>
+                            <div>
+                              <div style={{ fontSize: "14px", fontWeight: "600", color: "#0F172A" }}>{w.title}</div>
+                              <div style={{ fontSize: "12px", color: "#64748B", marginTop: "2px" }}>{w.subtitle}</div>
+                            </div>
+                          </div>
+                          <div style={{ display: "flex", alignItems: "center", gap: "10px" }} contentEditable={false}>
+                            <button
+                              className="no-print"
+                              onClick={() => { setActiveCommentSection(`Workflow: ${w.title}`); setCommentText(comments[`Workflow: ${w.title}`] || ""); }}
+                              style={{ background: "none", border: "none", color: "#64748B", cursor: "pointer", display: "flex", alignItems: "center", gap: "4px", fontSize: "12px", fontWeight: "600", padding: "4px", marginRight: "4px" }}
+                              title="Add Comment"
+                            >
+                              <MessageIcon />
+                            </button>
+                            <span
+                              className="no-print editable-badge"
+                              onClick={(e) => { if (!isEditMode) handleToggleOverride(w.key); }}
+                              style={{
+                                padding: "4px 12px", borderRadius: "20px", fontSize: "12px", fontWeight: "700",
+                                backgroundColor: w.compliant ? "#16A34A" : "#DC2626", color: "white",
+                                cursor: "pointer",
+                                userSelect: "none",
+                                transition: "all 0.2s"
+                              }}
+                              onMouseOver={(e) => e.currentTarget.style.opacity = "0.8"}
+                              onMouseOut={(e) => e.currentTarget.style.opacity = "1"}
+                              title={isEditMode ? "Click to select badge" : "Click to manually toggle compliance status"}
+                            >
+                              {w.compliant ? "Compliant" : "Non-Compliant"}
+                            </span>
+                            {w.compliant ? <GreenCircleCheck /> : <RedCircleX />}
+                          </div>
+                        </div>
+
+                        {/* Issues list */}
+                        <div className="workflow-issues-list" style={{ marginTop: "12px", borderTop: "1px solid #FEE2E2", paddingTop: "10px", display: w.compliant ? "none" : "block" }}>
+                          {w.issues.length > 0 ? (
+                            w.issues.map((issue, idx) => (
+                              <div key={idx} style={{ display: "flex", alignItems: "flex-start", gap: "8px", marginBottom: idx < w.issues.length - 1 ? "4px" : 0 }}>
+                                <div style={{ color: "#DC2626", fontSize: "12px", marginTop: "2px" }}>•</div>
+                                <div style={{ fontSize: "12.5px", color: "#991B1B", lineHeight: "1.4" }}>{issue}</div>
+                              </div>
+                            ))
+                          ) : (
+                            <div style={{ display: "flex", alignItems: "flex-start", gap: "8px" }}>
+                              <div style={{ color: "#DC2626", fontSize: "12px", marginTop: "2px" }}>•</div>
+                              <div style={{ fontSize: "12.5px", color: "#991B1B", lineHeight: "1.4" }}>Type specific issue details here...</div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Employee summary */}
+                <div className="card-print" style={{ backgroundColor: "white", borderRadius: "12px", border: "1px solid #E2E8F0", padding: "20px 24px", marginBottom: "24px" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
+                    <h3 style={{ margin: 0, fontSize: "16px", fontWeight: "700", color: "#0F172A" }}>Employee Summary</h3>
+                  </div>
+                  {employees.length === 0 ? (
+                    <p style={{ margin: 0, fontSize: "13px", color: "#94A3B8" }}>No employees found.</p>
+                  ) : (
+                    employees.map((emp) => (
+                      <div key={emp.id} style={{
+                        display: "flex", alignItems: "center", justifyContent: "space-between",
+                        padding: "12px 14px", backgroundColor: "#F8FAFC", borderRadius: "8px", marginBottom: "8px",
+                      }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                          <div style={{
+                            width: "34px", height: "34px", borderRadius: "50%",
+                            backgroundColor: "#EFF6FF", display: "flex", alignItems: "center", justifyContent: "center",
+                            fontSize: "14px", fontWeight: "700", color: "#0852C9", flexShrink: 0,
+                          }}>
+                            {(emp.employee_full_name || "?")[0].toUpperCase()}
+                          </div>
+                          <div>
+                            <div style={{ fontSize: "14px", fontWeight: "600", color: "#0F172A" }}>{emp.employee_full_name}</div>
+                            <div style={{ fontSize: "12px", color: "#64748B", marginTop: "2px" }}>{emp.nationality}</div>
+                          </div>
+                        </div>
+                        <span className="editable-badge" style={{
+                          padding: "4px 12px", borderRadius: "20px", fontSize: "12px", fontWeight: "600",
+                          backgroundColor: !["british", "irish", "british/irish"].includes(emp.nationality?.toLowerCase() || "")
+                            ? "#7C3AED" : "#0852C9",
+                          color: "white",
+                          cursor: isEditMode ? "pointer" : "default"
+                        }}>
+                          {!["british", "irish", "british/irish"].includes(emp.nationality?.toLowerCase() || "")
+                            ? "Migrant Worker" : "Pension Checked"}
+                        </span>
+                      </div>
+                    ))
+                  )}
+                </div>
+
+                {/* Comments Section (Visible in Report/Print) */}
+                {Object.entries(comments).some(([_, text]) => text && text.trim() !== "") && (
+                  <div className="card-print" style={{ backgroundColor: "white", borderRadius: "12px", border: "1px solid #E2E8F0", padding: "20px 24px", marginBottom: "24px" }}>
+                    <h3 style={{ margin: "0 0 16px", fontSize: "16px", fontWeight: "700", color: "#0F172A" }}>Validation Comments & Feedback</h3>
+                    <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+                      {Object.entries(comments).map(([section, text]) => (
+                        text && text.trim() !== "" && (
+                          <div key={section} style={{ paddingBottom: "12px", borderBottom: "1px solid #F1F5F9" }}>
+                            <div style={{ fontSize: "12px", fontWeight: "700", color: "#0852C9", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: "4px" }}>{section}</div>
+                            <div style={{ fontSize: "13.5px", color: "#334155", lineHeight: "1.5", whiteSpace: "pre-wrap" }}>{text}</div>
+                          </div>
+                        )
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+              </>
+            )
           )}
         </div>
 
-        {/* Comments Section (Visible in Report/Print) */}
-        {Object.entries(comments).some(([_, text]) => text && text.trim() !== "") && (
-          <div className="card-print" style={{ backgroundColor: "white", borderRadius: "12px", border: "1px solid #E2E8F0", padding: "20px 24px", marginBottom: "24px" }}>
-            <h3 style={{ margin: "0 0 16px", fontSize: "16px", fontWeight: "700", color: "#0F172A" }}>Validation Comments & Feedback</h3>
-            <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-              {Object.entries(comments).map(([section, text]) => (
-                text && text.trim() !== "" && (
-                  <div key={section} style={{ paddingBottom: "12px", borderBottom: "1px solid #F1F5F9" }}>
-                    <div style={{ fontSize: "12px", fontWeight: "700", color: "#0852C9", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: "4px" }}>{section}</div>
-                    <div style={{ fontSize: "13.5px", color: "#334155", lineHeight: "1.5", whiteSpace: "pre-wrap" }}>{text}</div>
-                  </div>
-                )
-              ))}
-            </div>
+        {/* Actions */}
+        {!loading && (
+          <div className="no-print" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px", padding: "0 24px", marginTop: "24px" }}>
+            <button
+              onClick={handleStartNew}
+              disabled={isSubmitting}
+              style={{
+                display: "flex", alignItems: "center", justifyContent: "center", gap: "8px",
+                padding: "13px 20px", backgroundColor: isSubmitting ? "#F1F5F9" : "white", color: "#374151",
+                border: "1.5px solid #D1D5DB", borderRadius: "8px",
+                fontSize: "14px", fontWeight: "600", cursor: isSubmitting ? "not-allowed" : "pointer",
+              }}
+            >
+              {isSubmitting ? <SpinnerIcon color="#0852C9" /> : (
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M2 8a6 6 0 016-6 6 6 0 015.5 3.6M14 8a6 6 0 01-6 6 6 6 0 01-5.5-3.6" stroke="#374151" strokeWidth="1.5" strokeLinecap="round" /><path d="M14 4v3.5H10.5" stroke="#374151" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>
+              )}
+              {isSubmitting ? "Starting..." : "Start New Validation"}
+            </button>
+            <button onClick={() => window.print()} style={{
+              display: "flex", alignItems: "center", justifyContent: "center", gap: "8px",
+              padding: "13px 20px", backgroundColor: "#0852C9", color: "white",
+              border: "none", borderRadius: "8px",
+              fontSize: "14px", fontWeight: "600", cursor: "pointer",
+            }}>
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M8 2v8M8 10l-3-3M8 10l3-3" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /><path d="M2 13h12" stroke="white" strokeWidth="1.5" strokeLinecap="round" /></svg>
+              Download Report
+            </button>
           </div>
         )}
-
-        {/* Actions */}
-        <div className="no-print" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
-          <button 
-            onClick={handleStartNew} 
-            disabled={isSubmitting}
-            style={{
-              display: "flex", alignItems: "center", justifyContent: "center", gap: "8px",
-              padding: "13px 20px", backgroundColor: isSubmitting ? "#F1F5F9" : "white", color: "#374151",
-              border: "1.5px solid #D1D5DB", borderRadius: "8px",
-              fontSize: "14px", fontWeight: "600", cursor: isSubmitting ? "not-allowed" : "pointer",
-            }}
-          >
-            {isSubmitting ? <SpinnerIcon color="#0852C9" /> : (
-              <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M2 8a6 6 0 016-6 6 6 0 015.5 3.6M14 8a6 6 0 01-6 6 6 6 0 01-5.5-3.6" stroke="#374151" strokeWidth="1.5" strokeLinecap="round" /><path d="M14 4v3.5H10.5" stroke="#374151" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>
-            )}
-            {isSubmitting ? "Starting..." : "Start New Validation"}
-          </button>
-          <button onClick={() => window.print()} style={{
-            display: "flex", alignItems: "center", justifyContent: "center", gap: "8px",
-            padding: "13px 20px", backgroundColor: "#0852C9", color: "white",
-            border: "none", borderRadius: "8px",
-            fontSize: "14px", fontWeight: "600", cursor: "pointer",
-          }}>
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M8 2v8M8 10l-3-3M8 10l3-3" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /><path d="M2 13h12" stroke="white" strokeWidth="1.5" strokeLinecap="round" /></svg>
-            Download Report
-          </button>
-        </div>
-        </>
-        )}
       </div>
+
+      {badgeDropdown && (
+        <div className="badge-dropdown-container" style={{
+          position: "absolute", top: badgeDropdown.y, left: badgeDropdown.x, zIndex: 10000,
+          backgroundColor: "white", border: "1px solid #E2E8F0", borderRadius: "8px", boxShadow: "0 4px 6px -1px rgba(0, 0, 0, 0.1)",
+          padding: "8px", display: "flex", flexDirection: "column", gap: "4px"
+        }}>
+          {allBadges.map((b, i) => (
+            <button key={i} onClick={() => selectBadge(b)} style={{
+              padding: "6px 12px", border: "none", background: "none", cursor: "pointer", textAlign: "left",
+              fontSize: "13px", fontWeight: "600", borderRadius: "4px", color: "#334155",
+            }}
+              onMouseOver={(e) => e.currentTarget.style.backgroundColor = "#F1F5F9"}
+              onMouseOut={(e) => e.currentTarget.style.backgroundColor = "transparent"}>
+              <span style={{ display: "inline-block", width: "10px", height: "10px", borderRadius: "50%", backgroundColor: b.bg, marginRight: "8px" }}></span>
+              {b.label}
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* Feedback/Comment Modal */}
       {activeCommentSection && (
