@@ -591,12 +591,6 @@ function BankStatementImpl() {
               const innerW = CHART_W - PAD_L - PAD_R;
               const innerH = CHART_H - PAD_T - PAD_B;
 
-              const dummyData = [
-                { label: "February", year: 2026, in: 5200, out: 3100 },
-                { label: "March",    year: 2026, in: 6800, out: 4200 },
-                { label: "April",    year: 2026, in: 4900, out: 3800 },
-              ];
-
               const getRealData = () => {
                 if (monthlySummary && Object.keys(monthlySummary).length > 0) {
                   return Object.entries(monthlySummary).map(([key, val]: [string, any]) => {
@@ -632,7 +626,8 @@ function BankStatementImpl() {
                 return Object.values(months).sort((a, b) => a.year !== b.year ? a.year - b.year : a.monthIndex - b.monthIndex);
               };
 
-              const data = transactions.length > 0 ? getRealData() : dummyData;
+              const data = getRealData();
+              if (data.length === 0) return null;
               const maxVal = Math.max(...data.flatMap(d => [d.in, d.out]), 1000);
               const yMax = Math.ceil(maxVal / 1000) * 1000 * 1.2;
               const yTicks = [0, 0.25, 0.5, 0.75, 1].map(f => Math.round(yMax * f));
@@ -665,7 +660,7 @@ function BankStatementImpl() {
                       <div>
                         <h3 style={{ margin: 0, fontSize: "16px", fontWeight: "700", color: "#0F172A" }}>Workflow 2: Cash Flow Pattern</h3>
                         <p style={{ margin: 0, fontSize: "12px", color: "#64748B" }}>
-                          {transactions.length > 0 ? `Based on ${transactions.length} transactions` : "Preview with sample data"}
+                          {transactions.length > 0 ? `Based on ${transactions.length} transactions` : "Based on extracted monthly summary"}
                         </p>
                       </div>
                     </div>
