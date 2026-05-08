@@ -628,7 +628,7 @@ function HRRecordsValidationImpl() {
       </div>
 
       {showModal && (
-        <div style={{ position: "fixed", inset: 0, backgroundColor: "rgba(15,23,42,0.55)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 300 }} onClick={() => setShowModal(false)}>
+        <div style={{ position: "fixed", inset: 0, backgroundColor: "rgba(15,23,42,0.55)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 300 }}>
           <div style={{ backgroundColor: "white", borderRadius: "14px", padding: "26px 28px 24px", width: "520px", maxWidth: "95vw", boxShadow: "0 25px 60px rgba(0,0,0,0.22)", position: "relative", maxHeight: "90vh", overflowY: "auto" }} onClick={(e) => e.stopPropagation()}>
 
             <h3 style={{ margin: "0 32px 4px 0", fontSize: "18px", fontWeight: "700", color: "#0F172A" }}>Add New Employee</h3>
@@ -775,7 +775,7 @@ function HRRecordsValidationImpl() {
                   <input type="date" value={rtwForm.startDate} onChange={(e) => setRtwForm({ ...rtwForm, startDate: e.target.value })} style={inputStyle} />
                 </div>
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
-                  <button onClick={() => setShowModal(false)} style={cancelBtn} disabled={submitting}>Cancel</button>
+                  <button style={cancelBtn} disabled={submitting}>Cancel</button>
                   <button onClick={handleRtwAdd} disabled={!rtwFormValid || submitting}
                     style={{ ...primaryBtn, opacity: rtwFormValid && !submitting ? 1 : 0.5, cursor: rtwFormValid && !submitting ? "pointer" : "not-allowed", display: "flex", alignItems: "center", justifyContent: "center", gap: "8px" }}>
                     {submitting ? <><SpinnerIcon color="#fff" /> Adding…</> : "Add Employee"}
@@ -815,7 +815,7 @@ function HRRecordsValidationImpl() {
                   <input type="date" value={manualForm.startDate} onChange={(e) => setManualForm({ ...manualForm, startDate: e.target.value })} style={inputStyle} />
                 </div>
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
-                  <button onClick={() => setShowModal(false)} style={cancelBtn} disabled={submitting}>Cancel</button>
+                  <button style={cancelBtn} disabled={submitting}>Cancel</button>
                   <button onClick={handleManualAdd} disabled={!manualFormValid || submitting}
                     style={{ ...primaryBtn, opacity: manualFormValid && !submitting ? 1 : 0.5, cursor: manualFormValid && !submitting ? "pointer" : "not-allowed", display: "flex", alignItems: "center", justifyContent: "center", gap: "8px" }}>
                     {submitting ? <><SpinnerIcon color="#fff" /> Adding…</> : "Add Employee"}
