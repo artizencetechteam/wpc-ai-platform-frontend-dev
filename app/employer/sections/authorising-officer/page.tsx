@@ -371,7 +371,9 @@ function AODetailsForm({ mode, employees, initialData, onValidate, onContinue, o
 
       {/* Role */}
       <div style={{ marginBottom: "20px" }}>
-        <label style={lbl}>Role / Position</label>
+        <label style={lbl}>
+          Role / Position <span style={{ color: "#DC2626" }}>* Required</span>
+        </label>
         <input
           type="text"
           value={role}
