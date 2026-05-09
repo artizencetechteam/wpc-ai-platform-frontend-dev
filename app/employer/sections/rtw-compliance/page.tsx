@@ -492,7 +492,7 @@ function RTWVerificationScreen({ migrants, onBackToStaffList, onContinue, onSave
 
               {/* Expiry Date */}
               <div>
-                <div style={{ fontSize: "11px", color: "#6B7280", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: "4px" }}>Expiry Date</div>
+                <div style={{ fontSize: "11px", color: "#6B7280", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: "4px" }}>RTW Expiry Date</div>
                 {isEditing ? (
                   <input
                     type="date"
