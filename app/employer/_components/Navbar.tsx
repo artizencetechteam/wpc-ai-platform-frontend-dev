@@ -39,7 +39,7 @@ useEffect(() => {
   return (
     <nav className="flex items-center justify-start p-2 px-4 bg-white border-b border-[#E5E7EB]">
       {/* Logo section - hidden on mobile, visible on md and up */}
-      <div onClick={() => router.push(`/${role}/dashboard/`)} className="hidden md:flex w-60 items-center space-x-2">
+      <div onClick={() => router.push('/')} className="hidden md:flex w-60 items-center space-x-2 cursor-pointer">
         <Logo className='object-contain h-10 w-auto' fontSize={15} />
       </div>
 

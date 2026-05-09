@@ -1034,7 +1034,7 @@ function SummaryPageImpl(): React.JSX.Element {
 
         {/* Actions */}
         {!loading && (
-          <div className="no-print" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px", padding: "0 24px", marginTop: "24px" }}>
+          <div className="no-print" style={{ display: "grid", gridTemplateColumns: "1fr auto auto", gap: "12px", padding: "0 24px", marginTop: "24px" }}>
             <button
               onClick={handleStartNew}
               disabled={isSubmitting}
@@ -1059,6 +1059,30 @@ function SummaryPageImpl(): React.JSX.Element {
               <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M8 2v8M8 10l-3-3M8 10l3-3" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /><path d="M2 13h12" stroke="white" strokeWidth="1.5" strokeLinecap="round" /></svg>
               Download Report
             </button>
+            {isEditMode && (
+            <button onClick={() => {
+              if (isEditMode && printContainerRef.current) {
+                const html = printContainerRef.current.innerHTML;
+                setSavedHtml(html);
+                if (recordId) {
+                  sessionStorage.setItem(`report_edits_${recordId}`, html);
+                  const signature = buildCurrentSignature();
+                  sessionStorage.setItem(`summary_source_sig_${recordId}`, signature);
+                  void persistSummaryHtml(html, signature);
+                }
+                setIsEditMode(false);
+              }
+              setTimeout(() => window.print(), 100);
+            }} style={{
+              display: "flex", alignItems: "center", justifyContent: "center", gap: "8px",
+              padding: "13px 20px", backgroundColor: "#16A34A", color: "white",
+              border: "none", borderRadius: "8px",
+              fontSize: "14px", fontWeight: "600", cursor: "pointer",
+            }}>
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M8 2v8M8 10l-3-3M8 10l3-3" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /><path d="M2 13h12" stroke="white" strokeWidth="1.5" strokeLinecap="round" /></svg>
+              Save & Download Report
+            </button>
+            )}
           </div>
         )}
       </div>

@@ -781,7 +781,7 @@ function HRRecordsValidationImpl() {
                   <input type="date" value={rtwForm.startDate} onChange={(e) => setRtwForm({ ...rtwForm, startDate: e.target.value })} style={inputStyle} />
                 </div>
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
-                  <button style={cancelBtn} disabled={submitting}>Cancel</button>
+                  <button onClick={() => setShowModal(false)} style={cancelBtn} disabled={submitting}>Cancel</button>
                   <button onClick={handleRtwAdd} disabled={!rtwFormValid || submitting}
                     style={{ ...primaryBtn, opacity: rtwFormValid && !submitting ? 1 : 0.5, cursor: rtwFormValid && !submitting ? "pointer" : "not-allowed", display: "flex", alignItems: "center", justifyContent: "center", gap: "8px" }}>
                     {submitting ? <><SpinnerIcon color="#fff" /> Adding…</> : "Add Employee"}
@@ -821,7 +821,7 @@ function HRRecordsValidationImpl() {
                   <input type="date" value={manualForm.startDate} onChange={(e) => setManualForm({ ...manualForm, startDate: e.target.value })} style={inputStyle} />
                 </div>
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
-                  <button style={cancelBtn} disabled={submitting}>Cancel</button>
+                  <button onClick={() => setShowModal(false)} style={cancelBtn} disabled={submitting}>Cancel</button>
                   <button onClick={handleManualAdd} disabled={!manualFormValid || submitting}
                     style={{ ...primaryBtn, opacity: manualFormValid && !submitting ? 1 : 0.5, cursor: manualFormValid && !submitting ? "pointer" : "not-allowed", display: "flex", alignItems: "center", justifyContent: "center", gap: "8px" }}>
                     {submitting ? <><SpinnerIcon color="#fff" /> Adding…</> : "Add Employee"}
