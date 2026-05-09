@@ -32,6 +32,16 @@ const getSessionToken = (): string | null => {
   return getCookie("session-token");
 };
 
+const logoutAndRedirect = () => {
+  deleteCookie("access-token");
+  deleteCookie("refresh-token");
+  deleteCookie("session-token");
+
+  if (!isPublicRoute()) {
+    window.location.href = "/welcome";
+  }
+};
+
 /* ============================================
    TOKEN CHECK
 ============================================ */
@@ -95,6 +105,11 @@ clientApi.interceptors.request.use(
 
       if (refreshToken) {
 
+        if (isTokenExpired(refreshToken)) {
+          logoutAndRedirect();
+          return Promise.reject(new Error("Refresh token expired"));
+        }
+
         try {
 
           const refreshResponse = await axios.post(
@@ -113,18 +128,14 @@ clientApi.interceptors.request.use(
           }
 
         } catch (error) {
-
-          deleteCookie("access-token");
-          deleteCookie("refresh-token");
-          deleteCookie("session-token");
-
-          if (!isPublicRoute()) {
-            window.location.href = "/welcome";
-          }
+          logoutAndRedirect();
 
           return Promise.reject(error);
         }
 
+      } else {
+        logoutAndRedirect();
+        return Promise.reject(new Error("No refresh token"));
       }
     }
 
@@ -184,14 +195,7 @@ clientApi.interceptors.response.use(
         }
 
       } catch (refreshError) {
-
-        deleteCookie("access-token");
-        deleteCookie("refresh-token");
-        deleteCookie("session-token");
-
-        if (!isPublicRoute()) {
-          window.location.href = "/welcome";
-        }
+        logoutAndRedirect();
 
         return Promise.reject(refreshError);
       }
