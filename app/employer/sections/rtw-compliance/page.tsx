@@ -23,6 +23,7 @@ type Employee = {
   check_date?: string | null;
   company_name?: string | null;
   rtw_document_url?: string | null;
+  rtw_expiry_date?: string | null;
 };
 
 // --- Icons ---
@@ -84,8 +85,8 @@ function toISODate(val?: string | null): string | null {
   const year = d.getFullYear();
   const month = String(d.getMonth() + 1).padStart(2, "0");
   const day = String(d.getDate()).padStart(2, "0");
-  // The backend expects Datetime format: YYYY-MM-DDThh:mm
-  return `${year}-${month}-${day}T00:00:00`;
+  // The backend expects Date format: YYYY-MM-DD
+  return `${year}-${month}-${day}`;
 }
 
 // --- NoMigrantScreen ---
@@ -146,16 +147,17 @@ function RTWVerificationScreen({ migrants, onBackToStaffList, onContinue, onSave
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isEditing, setIsEditing] = useState(false);
   const [manualRefNumber, setManualRefNumber] = useState("");
+  const [expiryDate, setExpiryDate] = useState("");
 
 
   // ── RTW Compliance: check date must be BEFORE employment start date ──────────
   const getRTWComplianceStatus = () => {
     if (!checkDate || !employee?.startDate) return 'pending';
-    
+
     // Normalize to YYYY-MM-DD for reliable comparison regardless of time/timezone
     const checkStr = checkDate.split('T')[0];
     const startStr = employee.startDate.split('T')[0];
-    
+
     if (!checkStr || !startStr) return 'pending';
     return checkStr < startStr ? 'compliant' : 'non-compliant';
   };
@@ -170,6 +172,7 @@ function RTWVerificationScreen({ migrants, onBackToStaffList, onContinue, onSave
       setRtwDocumentUrl(employee.rtw_document_url || null);
       setManualName(employee.employee_full_name || "");
       setManualRefNumber(employee.documentNumber || employee.passportNumber || "");
+      setExpiryDate(toISODate(extractedData?.rtw_expiry_date || extractedData?.expiry_date || extractedData?.visa_expiry_date || employee.rtw_expiry_date) || "");
       setIsEditing(false); // Reset edit mode when switching employees
     }
   }, [currentIndex, extractedData, employee]);
@@ -206,7 +209,8 @@ function RTWVerificationScreen({ migrants, onBackToStaffList, onContinue, onSave
           employee_name: extracted.employee_name,
           company_name: extracted.company_name,
           check_date: extracted.date_of_check,
-          reference_number: extracted.reference_number
+          reference_number: extracted.reference_number,
+          expiry_date: extracted.rtw_expiry_date || extracted.expiry_date || extracted.visa_expiry_date
         };
         setExtractedData(newData);
 
@@ -216,6 +220,7 @@ function RTWVerificationScreen({ migrants, onBackToStaffList, onContinue, onSave
           rtw_document_url: publicUrl,
           passport_number: extracted.reference_number,
           check_date: toISODate(extracted.date_of_check),
+          rtw_expiry_date: toISODate(extracted.rtw_expiry_date || extracted.expiry_date || extracted.visa_expiry_date),
           company_name: extracted.company_name
         });
 
@@ -241,9 +246,10 @@ function RTWVerificationScreen({ migrants, onBackToStaffList, onContinue, onSave
     try {
       await onSaveEmployee(employee.id, {
         employee_full_name: manualName,
-        check_date: checkDate, // Already in T00:00:00 format from setCheckDate
+        check_date: checkDate, // Already in YYYY-MM-DD format from setCheckDate
         company_name: companyName,
-        passport_number: manualRefNumber
+        passport_number: manualRefNumber,
+        rtw_expiry_date: expiryDate
       });
       setIsEditing(false);
       toast.success("Details updated successfully!");
@@ -377,9 +383,9 @@ function RTWVerificationScreen({ migrants, onBackToStaffList, onContinue, onSave
                   <div style={{ color: "#166534", fontSize: "14px", fontWeight: "700" }}>✓ {extractedData ? "Extracted Information" : "Document on File"}</div>
                 )}
               </div>
-              
+
               {!isEditing ? (
-                <button 
+                <button
                   onClick={() => setIsEditing(true)}
                   style={{
                     fontSize: "12px", color: "#0852C9", fontWeight: "600",
@@ -390,7 +396,7 @@ function RTWVerificationScreen({ migrants, onBackToStaffList, onContinue, onSave
                   Edit Details Manually
                 </button>
               ) : (
-                <button 
+                <button
                   onClick={() => setIsEditing(false)}
                   style={{
                     fontSize: "12px", color: "#64748B", fontWeight: "600",
@@ -480,6 +486,26 @@ function RTWVerificationScreen({ migrants, onBackToStaffList, onContinue, onSave
                 ) : (
                   <div style={{ fontSize: "14px", fontWeight: "600", color: "#0F172A" }}>
                     {manualRefNumber || "N/A"}
+                  </div>
+                )}
+              </div>
+
+              {/* Expiry Date */}
+              <div>
+                <div style={{ fontSize: "11px", color: "#6B7280", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: "4px" }}>RTW Expiry Date</div>
+                {isEditing ? (
+                  <input
+                    type="date"
+                    value={expiryDate ? expiryDate.split('T')[0] : ""}
+                    onChange={(e) => setExpiryDate(toISODate(e.target.value) || "")}
+                    style={{
+                      width: "100%", padding: "8px 10px", borderRadius: "6px",
+                      border: "1px solid #CBD5E1", fontSize: "13px", outline: "none"
+                    }}
+                  />
+                ) : (
+                  <div style={{ fontSize: "14px", fontWeight: "600", color: "#0F172A" }}>
+                    {expiryDate ? formatDate(expiryDate) : "N/A"}
                   </div>
                 )}
               </div>
@@ -650,6 +676,7 @@ function RTWComplianceImpl() {
                 check_date: e.check_date,
                 company_name: e.company_name,
                 rtw_document_url: e.rtw_document_url,
+                rtw_expiry_date: e.rtw_expiry_date,
               }));
               setEmployees(mapped);
               sessionStorage.setItem(`hr_employees_${id}`, JSON.stringify(mapped));

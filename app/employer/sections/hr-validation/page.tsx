@@ -460,6 +460,7 @@ function HRRecordsValidationImpl() {
         check_date: rtwForm.check_date || null,
         company_name: rtwForm.company_name || null,
         passport_number: rtwForm.documentNumber || null,
+        rtw_expiry_date: rtwForm.expiryDate || null,
       },
       getClientToken()
     );
@@ -490,7 +491,7 @@ function HRRecordsValidationImpl() {
     try {
       const p = JSON.parse(sessionStorage.getItem(`hr_progress_${hrRecordId}`) || "{}");
       sessionStorage.setItem(`hr_progress_${hrRecordId}`, JSON.stringify({ ...p, staff: true }));
-    } catch {}
+    } catch { }
   };
 
   const staffComplete = employees.length > 0;
@@ -503,9 +504,9 @@ function HRRecordsValidationImpl() {
 
   return (
     <div style={{ fontFamily: "'Segoe UI', system-ui, sans-serif", backgroundColor: "#F1F5F9", minHeight: "100vh" }}>
-      <HRValidationTabs 
-        currentTabId="staff" 
-        hrRecordId={hrRecordId} 
+      <HRValidationTabs
+        currentTabId="staff"
+        hrRecordId={hrRecordId}
         staffComplete={staffComplete}
       />
 
@@ -599,21 +600,21 @@ function HRRecordsValidationImpl() {
 
         {employees.length > 0 && (
           <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "20px" }}>
-            <button 
-              onClick={() => { 
+            <button
+              onClick={() => {
                 setIsSubmitting(true);
-                markStaffComplete(); 
-                router.push(`/employer/sections/rtw-compliance?recordId=${hrRecordId}`); 
+                markStaffComplete();
+                router.push(`/employer/sections/rtw-compliance?recordId=${hrRecordId}`);
               }}
               disabled={isSubmitting}
-              style={{ 
-                backgroundColor: isSubmitting ? "#93ABDE" : "#0852C9", 
-                color: "white", 
-                border: "none", 
-                borderRadius: "8px", 
-                padding: "12px 26px", 
-                fontSize: "14px", 
-                fontWeight: "600", 
+              style={{
+                backgroundColor: isSubmitting ? "#93ABDE" : "#0852C9",
+                color: "white",
+                border: "none",
+                borderRadius: "8px",
+                padding: "12px 26px",
+                fontSize: "14px",
+                fontWeight: "600",
                 cursor: isSubmitting ? "not-allowed" : "pointer",
                 display: "flex",
                 alignItems: "center",
@@ -628,7 +629,7 @@ function HRRecordsValidationImpl() {
       </div>
 
       {showModal && (
-        <div style={{ position: "fixed", inset: 0, backgroundColor: "rgba(15,23,42,0.55)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 300 }} onClick={() => setShowModal(false)}>
+        <div style={{ position: "fixed", inset: 0, backgroundColor: "rgba(15,23,42,0.55)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 300 }}>
           <div style={{ backgroundColor: "white", borderRadius: "14px", padding: "26px 28px 24px", width: "520px", maxWidth: "95vw", boxShadow: "0 25px 60px rgba(0,0,0,0.22)", position: "relative", maxHeight: "90vh", overflowY: "auto" }} onClick={(e) => e.stopPropagation()}>
 
             <h3 style={{ margin: "0 32px 4px 0", fontSize: "18px", fontWeight: "700", color: "#0F172A" }}>Add New Employee</h3>
@@ -696,10 +697,10 @@ function HRRecordsValidationImpl() {
                         try {
                           const res = await axios.post("/api/extract-rtw", { file_url: url });
                           const data = res.data;
-                          
+
                           if (data.status === "success" && data.rtw_work_document) {
                             const extracted = data.rtw_work_document;
-                            
+
                             const toISO = (val?: string | null) => {
                               if (!val) return "";
                               // Handle DD-MM-YYYY or DD/MM/YYYY
@@ -722,6 +723,7 @@ function HRRecordsValidationImpl() {
                               nationality: prev.nationality || "Migrant",
                               documentNumber: extracted.reference_number || prev.documentNumber,
                               check_date: toISO(extracted.date_of_check) || prev.check_date,
+                              expiryDate: toISO(extracted.rtw_expiry_date || extracted.expiry_date || extracted.visa_expiry_date) || prev.expiryDate,
                               company_name: (extracted.company_name || "").replace(/\s+/g, " ").trim() || prev.company_name,
                             }));
                             toast.success("Details extracted successfully!");
@@ -764,6 +766,10 @@ function HRRecordsValidationImpl() {
                   <label style={lbl}>Company Name</label>
                   <input type="text" value={rtwForm.company_name} onChange={(e) => setRtwForm({ ...rtwForm, company_name: e.target.value })} placeholder="e.g. My Company Ltd" style={inputStyle} />
                 </div>
+                <div style={{ marginBottom: "14px" }}>
+                  <label style={lbl}>Expiry Date</label>
+                  <input type="date" value={rtwForm.expiryDate} onChange={(e) => setRtwForm({ ...rtwForm, expiryDate: e.target.value })} style={inputStyle} />
+                </div>
                 {rtwForm.fileUrl && (
                   <div style={{ marginBottom: "14px" }}>
                     <label style={lbl}>Document URL</label>
@@ -775,7 +781,7 @@ function HRRecordsValidationImpl() {
                   <input type="date" value={rtwForm.startDate} onChange={(e) => setRtwForm({ ...rtwForm, startDate: e.target.value })} style={inputStyle} />
                 </div>
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
-                  <button onClick={() => setShowModal(false)} style={cancelBtn} disabled={submitting}>Cancel</button>
+                  <button style={cancelBtn} disabled={submitting}>Cancel</button>
                   <button onClick={handleRtwAdd} disabled={!rtwFormValid || submitting}
                     style={{ ...primaryBtn, opacity: rtwFormValid && !submitting ? 1 : 0.5, cursor: rtwFormValid && !submitting ? "pointer" : "not-allowed", display: "flex", alignItems: "center", justifyContent: "center", gap: "8px" }}>
                     {submitting ? <><SpinnerIcon color="#fff" /> Adding…</> : "Add Employee"}
@@ -815,7 +821,7 @@ function HRRecordsValidationImpl() {
                   <input type="date" value={manualForm.startDate} onChange={(e) => setManualForm({ ...manualForm, startDate: e.target.value })} style={inputStyle} />
                 </div>
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
-                  <button onClick={() => setShowModal(false)} style={cancelBtn} disabled={submitting}>Cancel</button>
+                  <button style={cancelBtn} disabled={submitting}>Cancel</button>
                   <button onClick={handleManualAdd} disabled={!manualFormValid || submitting}
                     style={{ ...primaryBtn, opacity: manualFormValid && !submitting ? 1 : 0.5, cursor: manualFormValid && !submitting ? "pointer" : "not-allowed", display: "flex", alignItems: "center", justifyContent: "center", gap: "8px" }}>
                     {submitting ? <><SpinnerIcon color="#fff" /> Adding…</> : "Add Employee"}
