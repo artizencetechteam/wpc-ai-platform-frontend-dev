@@ -7,10 +7,10 @@ import toast from "react-hot-toast";
 import HRValidationTabs from "../_components/HRValidationTabs";
 import {
   updateHRValidationRecordAction,
-  listFinancialRecordsAction,
   createFinancialRecordAction,
   updateFinancialRecordAction,
   listHRValidationRecordsAction,
+  getHRValidationRecordAction,
   listEmployeesAction,
 } from "@/app/employer/sections/action/action";
 import { getClientToken } from "@/app/employer/sections/company/page";
@@ -1176,6 +1176,12 @@ function FinancialPageImpl(): React.JSX.Element {
   const [hydrated, setHydrated] = useState<boolean>(false);
 
   useEffect(() => {
+    const parseNumber = (value: any): number | null => {
+      if (value === null || value === undefined || value === "") return null;
+      const num = typeof value === "number" ? value : parseFloat(String(value));
+      return isNaN(num) ? null : num;
+    };
+
     const queryId = searchParams.get("recordId") || searchParams.get("id");
     const id = queryId || sessionStorage.getItem("current_hr_record_id");
     if (id) setRecordId(Number(id));
@@ -1198,50 +1204,39 @@ function FinancialPageImpl(): React.JSX.Element {
           }
 
           // Fetch HR Validation Record to get transactions
-          const hrRes = await listHRValidationRecordsAction(token);
+          const hrRes = await getHRValidationRecordAction(numId, token);
           if (hrRes.success && hrRes.data) {
-            const hrRecord = hrRes.data.find((r: any) => r.id === numId);
+            const hrRecord = hrRes.data;
             if (hrRecord) {
+              const openingBalance = parseNumber(hrRecord.Opening_Balance);
+              const closingBalance = parseNumber(hrRecord.Closing_Balance);
+              const incomingTotal = parseNumber(hrRecord.payment_incoming_total);
+              const outgoingRaw = parseNumber(hrRecord.payment_outgoing_total);
+              const outgoingTotal = outgoingRaw != null ? Math.abs(outgoingRaw) : null;
+
               setSavedContracts(hrRecord.result_complete_sections?.contracts || []);
               setFinancialData(prev => ({
                 ...prev,
                 transactions: hrRecord.transactions 
                   ? (typeof hrRecord.transactions === 'string' ? JSON.parse(hrRecord.transactions) : hrRecord.transactions)
                   : prev.transactions,
-                Opening_Balance: hrRecord.Opening_Balance ?? prev.Opening_Balance,
-                Closing_Balance: hrRecord.Closing_Balance ?? prev.Closing_Balance,
+                Opening_Balance: openingBalance ?? prev.Opening_Balance,
+                Closing_Balance: closingBalance ?? prev.Closing_Balance,
+                balance: closingBalance ?? prev.balance,
                 bank_statement_url: hrRecord.bank_statement_url ?? prev.bank_statement_url,
-                payment_incoming_total: hrRecord.payment_incoming_total ?? prev.payment_incoming_total,
-                payment_outgoing_total: hrRecord.payment_outgoing_total ?? prev.payment_outgoing_total,
+                payment_incoming_total: incomingTotal ?? prev.payment_incoming_total,
+                payment_outgoing_total: outgoingTotal ?? prev.payment_outgoing_total,
                 monthly_summary: hrRecord.monthly_summary
                   ? (typeof hrRecord.monthly_summary === 'string' ? JSON.parse(hrRecord.monthly_summary) : hrRecord.monthly_summary)
                   : prev.monthly_summary,
-                // Also sync Step 2 fields if they are missing
-                incoming: hrRecord.payment_incoming_total != null ? parseFloat(hrRecord.payment_incoming_total) : prev.incoming,
-                outgoing: hrRecord.payment_outgoing_total != null ? parseFloat(hrRecord.payment_outgoing_total) : prev.outgoing,
+                // Also sync Step 2 fields
+                incoming: incomingTotal ?? prev.incoming,
+                outgoing: outgoingTotal ?? prev.outgoing,
                 contract_verification_results: hrRecord.result_complete_sections?.contract_verification_results || prev.contract_verification_results
               }));
             }
           }
 
-          const res = await listFinancialRecordsAction(token);
-          if (res.success && res.data) {
-            const finRecord = res.data.find(r => r.HRValidationRecord_id === numId);
-            if (finRecord) {
-              setFinancialRecordId(finRecord.id);
-              setFinancialData(prev => ({
-                ...prev,
-                // Use Closing_Balance from HR record (set above) as the source of truth for Step 1
-                balance: prev.Closing_Balance != null ? prev.Closing_Balance : prev.balance,
-                incoming: finRecord.payment_incoming_total != null ? parseFloat(finRecord.payment_incoming_total) : prev.incoming,
-                outgoing: finRecord.payment_outgoing_total != null ? parseFloat(finRecord.payment_outgoing_total) : prev.outgoing,
-                payment_incoming_total: finRecord.payment_incoming_total != null ? parseFloat(finRecord.payment_incoming_total) : prev.payment_incoming_total,
-                payment_outgoing_total: finRecord.payment_outgoing_total != null ? parseFloat(finRecord.payment_outgoing_total) : prev.payment_outgoing_total,
-                paymentsReflected: finRecord.payments_reflected_in_bank === true ? "yes" : finRecord.payments_reflected_in_bank === false ? "no" : prev.paymentsReflected,
-                futureEngagement: finRecord.is_future_engagement === true ? "yes" : finRecord.is_future_engagement === false ? "no" : prev.futureEngagement,
-              }));
-            }
-          }
         } catch (err) {
           console.error("Error fetching financial records:", err);
         } finally {
@@ -1363,7 +1358,14 @@ function FinancialPageImpl(): React.JSX.Element {
             <SpinnerIcon />
           </div>
         )}
-        {hydrated && step === "balance" && <BalanceStep onNext={() => { handleNext("balance"); }} onSave={handleSave} initialBalance={financialData.balance} isSubmitting={isSubmitting} />}
+        {hydrated && step === "balance" && (
+          <BalanceStep
+            onNext={() => { handleNext("balance"); }}
+            onSave={handleSave}
+            initialBalance={financialData.Closing_Balance ?? financialData.balance}
+            isSubmitting={isSubmitting}
+          />
+        )}
         {hydrated && step === "cashflow" && <CashFlowStep onNext={() => handleNext("cashflow")} onPrev={() => setStep("balance")} onSave={handleSave} initialIncoming={financialData.incoming} initialOutgoing={financialData.outgoing} isSubmitting={isSubmitting} />}
         {hydrated && step === "investments" && (
           <InvestmentsStep

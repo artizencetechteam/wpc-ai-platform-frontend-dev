@@ -341,22 +341,32 @@ function SummaryPageImpl(): React.JSX.Element {
               // 2. Company Name
               if (record.company_name) setCompanyName(record.company_name);
 
-              // 3. Contracts & Pension (from result_complete_sections)
+              // 3. Summary HTML (server takes precedence over session cache)
+              if (record.html_content_for_summary) {
+                setSavedHtml(record.html_content_for_summary);
+                if (id) sessionStorage.setItem(`report_edits_${id}`, record.html_content_for_summary);
+              }
+
+              // 4. Contracts & Pension (from result_complete_sections)
               const saved = record.result_complete_sections || {};
               if (saved.contracts) setContracts(saved.contracts);
               if (saved.pension) setPensionData(saved.pension);
               if (saved.manual_overrides) setManualOverrides(saved.manual_overrides);
 
-              // 4. Financial Data
+              // 5. Financial Data
               const finRes = await listFinancialRecordsAction(token);
               if (finRes.success && finRes.data) {
                 const finRecord = finRes.data.find((fr) => fr.HRValidationRecord_id === Number(id));
                 if (finRecord) {
+                  const incoming = finRecord.total_incoming_gbp_credits ? parseFloat(finRecord.total_incoming_gbp_credits) : undefined;
+                  const outgoing = finRecord.total_outgoing_gbp_debits ? parseFloat(finRecord.total_outgoing_gbp_debits) : undefined;
+                  const netCashFlow = incoming != null && outgoing != null ? incoming - outgoing : undefined;
                   setFinancialData((prev) => ({
                     ...prev,
                     balance: finRecord.current_closing_balance_gbp ? parseFloat(finRecord.current_closing_balance_gbp) : prev.balance,
-                    incoming: finRecord.total_incoming_gbp_credits ? parseFloat(finRecord.total_incoming_gbp_credits) : prev.incoming,
-                    outgoing: finRecord.total_outgoing_gbp_debits ? parseFloat(finRecord.total_outgoing_gbp_debits) : prev.outgoing,
+                    incoming: incoming ?? prev.incoming,
+                    outgoing: outgoing ?? prev.outgoing,
+                    netCashFlow: netCashFlow ?? prev.netCashFlow,
                     paymentsReflected: finRecord.payments_reflected_in_bank === true ? "yes" : finRecord.payments_reflected_in_bank === false ? "no" : prev.paymentsReflected,
                     futureEngagement: finRecord.is_future_engagement === true ? "yes" : finRecord.is_future_engagement === false ? "no" : prev.futureEngagement,
                   }));
@@ -554,6 +564,16 @@ function SummaryPageImpl(): React.JSX.Element {
     router.push("/employer/sections/company");
   };
 
+  const persistSummaryHtml = async (html: string) => {
+    if (!recordId) return;
+    try {
+      const token = getClientToken();
+      await updateHRValidationRecordAction(Number(recordId), { html_content_for_summary: html }, token);
+    } catch (err) {
+      console.error("Error saving summary HTML:", err);
+    }
+  };
+
   return (
     <div style={{ fontFamily: "'Segoe UI', system-ui, sans-serif", backgroundColor: "#F1F5F9", minHeight: "100vh" }}>
       <style>{`
@@ -609,6 +629,7 @@ function SummaryPageImpl(): React.JSX.Element {
                   const html = printContainerRef.current.innerHTML;
                   setSavedHtml(html);
                   if (recordId) sessionStorage.setItem(`report_edits_${recordId}`, html);
+                  void persistSummaryHtml(html);
                 }
                 setIsEditMode(false);
               } else {
