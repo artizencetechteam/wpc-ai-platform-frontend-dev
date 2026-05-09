@@ -604,7 +604,7 @@ function HRRecordsValidationImpl() {
               onClick={() => {
                 setIsSubmitting(true);
                 markStaffComplete();
-                router.push(`/employer/sections/rtw-compliance?recordId=${hrRecordId}`);
+                router.push(`/employer/sections/bank-statement?recordId=${hrRecordId}`);
               }}
               disabled={isSubmitting}
               style={{

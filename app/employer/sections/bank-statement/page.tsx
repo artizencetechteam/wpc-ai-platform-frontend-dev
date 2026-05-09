@@ -321,7 +321,7 @@ function BankStatementImpl() {
       const p = pStr ? JSON.parse(pStr) : {};
       p.bank = true;
       sessionStorage.setItem(`hr_progress_${hrRecordId}`, JSON.stringify(p));
-      router.push(`/employer/sections/pension?rewcordId=${hrRecordId}`);
+      router.push(`/employer/sections/rtw-compliance?recordId=${hrRecordId}`);
     }
   };
 
@@ -781,7 +781,7 @@ function BankStatementImpl() {
               }}
             >
               {isSubmitting && <SpinnerIcon color="#fff" />}
-              {isSubmitting ? "Saving..." : "Continue to Pension Compliance"}
+              {isSubmitting ? "Saving..." : "Continue to RTW Compliance"}
             </button>
           </div>
         )}

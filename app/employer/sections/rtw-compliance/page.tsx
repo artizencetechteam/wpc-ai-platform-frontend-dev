@@ -116,7 +116,7 @@ function NoMigrantScreen({ onContinue }: { onContinue: () => void }) {
             display: "flex", alignItems: "center", gap: "8px"
           }}
         >
-          Continue to Bank Statement
+          Continue to Pension
         </button>
       </div>
     </div>
@@ -126,12 +126,12 @@ function NoMigrantScreen({ onContinue }: { onContinue: () => void }) {
 // --- RTWVerificationScreen ---
 interface RTWVerificationScreenProps {
   migrants: Employee[];
-  onBackToStaffList: () => void;
+  onBackToBank: () => void;
   onContinue: () => void;
   onSaveEmployee: (empId: string, data: any) => Promise<void>;
 }
 
-function RTWVerificationScreen({ migrants, onBackToStaffList, onContinue, onSaveEmployee }: RTWVerificationScreenProps) {
+function RTWVerificationScreen({ migrants, onBackToBank, onContinue, onSaveEmployee }: RTWVerificationScreenProps) {
   const [currentIndex, setCurrentIndex] = useState(0);
   const employee = migrants[currentIndex];
   const hasDocument = !!(employee?.documentType || employee?.documentNumber);
@@ -562,11 +562,11 @@ function RTWVerificationScreen({ migrants, onBackToStaffList, onContinue, onSave
 
       {/* Navigation */}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-        <button onClick={onBackToStaffList} style={{
+        <button onClick={onBackToBank} style={{
           padding: "10px 20px", backgroundColor: "white", color: "#374151",
           border: "1.5px solid #D1D5DB", borderRadius: "8px",
           fontSize: "14px", fontWeight: "500", cursor: "pointer",
-        }}>Back to Staff List</button>
+        }}>Back to Bank Statement</button>
 
         <div style={{ display: "flex", gap: "10px" }}>
           {currentIndex > 0 && <button onClick={() => setCurrentIndex(currentIndex - 1)} style={{
@@ -618,7 +618,7 @@ function RTWVerificationScreen({ migrants, onBackToStaffList, onContinue, onSave
               }}
             >
               {isSubmitting && <SpinnerIcon color="#fff" />}
-              {isSubmitting ? "Processing..." : "Continue to Bank Statement"}
+              {isSubmitting ? "Processing..." : "Continue to Pension"}
             </button>
           )}
         </div>
@@ -729,7 +729,7 @@ function RTWComplianceImpl() {
     }
   };
 
-  const handleBack = () => router.push(`/employer/sections/hr-validation?recordId=${recordId}`);
+  const handleBack = () => router.push(`/employer/sections/bank-statement?recordId=${recordId}`);
   const handleContinueToBank = async () => {
     markRTWComplete();
 
@@ -749,7 +749,7 @@ function RTWComplianceImpl() {
       }
     }
 
-    router.push(`/employer/sections/bank-statement?recordId=${recordId}`);
+    router.push(`/employer/sections/pension?recordId=${recordId}`);
   };
 
   async function getHRRecord(id: number) {
@@ -769,7 +769,7 @@ function RTWComplianceImpl() {
       {loaded && (hasMigrants
         ? <RTWVerificationScreen
           migrants={migrants}
-          onBackToStaffList={handleBack}
+          onBackToBank={handleBack}
           onContinue={handleContinueToBank}
           onSaveEmployee={handleSaveEmployee}
         />

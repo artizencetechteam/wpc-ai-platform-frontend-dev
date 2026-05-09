@@ -56,6 +56,52 @@ interface TopNavProps {
   onTabClick: (tabId: string) => void;
 }
 
+interface SummarySignatureInput {
+  companyName: string;
+  progress: Progress;
+  employees: Array<{
+    id: string | number;
+    employee_full_name: string;
+    nationality: string;
+    check_date?: string | null;
+    employment_start_date?: string | null;
+    min_22_year_age?: boolean;
+    earning_gbp_10k_above?: boolean;
+    auto_enrollment_date?: string | null;
+    opted_out?: boolean;
+  }>;
+  contracts: Array<{ clientName?: string; exists?: string; aligns?: string }>;
+  pensionData: { companyRegistered?: string; eligibilityChecks?: Record<string, unknown> };
+  financialData: {
+    balance?: number;
+    incoming?: number;
+    outgoing?: number;
+    netCashFlow?: number;
+    paymentsReflected?: string | null;
+    futureEngagement?: string | null;
+    transactions?: Array<{ status: string }>;
+  };
+}
+
+const stableStringify = (value: unknown): string => {
+  const seen = new WeakSet<object>();
+  const normalize = (val: unknown): unknown => {
+    if (!val || typeof val !== "object") return val;
+    if (seen.has(val as object)) return undefined;
+    seen.add(val as object);
+    if (Array.isArray(val)) return val.map(normalize);
+    const out: Record<string, unknown> = {};
+    Object.keys(val as Record<string, unknown>).sort().forEach((key) => {
+      out[key] = normalize((val as Record<string, unknown>)[key]);
+    });
+    return out;
+  };
+
+  return JSON.stringify(normalize(value));
+};
+
+const buildSummarySignature = (input: SummarySignatureInput): string => stableStringify(input);
+
 // ─── Constants ───────────────────────────────────────────────────────────────
 
 
@@ -129,8 +175,14 @@ function SummaryPageImpl(): React.JSX.Element {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
   const [savedHtml, setSavedHtml] = useState<string | null>(null);
+  const [resultSections, setResultSections] = useState<Record<string, any>>({});
   const [badgeDropdown, setBadgeDropdown] = useState<{ target: HTMLElement, x: number, y: number } | null>(null);
   const printContainerRef = useRef<HTMLDivElement>(null);
+  const signatureCommittedRef = useRef(false);
+
+  useEffect(() => {
+    signatureCommittedRef.current = false;
+  }, [recordId]);
 
   useEffect(() => {
     if (recordId) {
@@ -138,6 +190,30 @@ function SummaryPageImpl(): React.JSX.Element {
       if (html) setSavedHtml(html);
     }
   }, [recordId]);
+
+  const clearSummaryEdits = async (): Promise<void> => {
+    if (!recordId) return;
+    setSavedHtml(null);
+    if (printContainerRef.current) {
+      printContainerRef.current.innerHTML = "";
+    }
+    sessionStorage.removeItem(`report_edits_${recordId}`);
+    sessionStorage.removeItem(`summary_source_sig_${recordId}`);
+
+    try {
+      const token = getClientToken();
+      await updateHRValidationRecordAction(Number(recordId), {
+        html_content_for_summary: null,
+        result_complete_sections: {
+          ...resultSections,
+          summary_source_sig: null,
+        },
+      }, token);
+      setResultSections((prev) => ({ ...prev, summary_source_sig: null }));
+    } catch (err) {
+      console.error("Error clearing summary HTML:", err);
+    }
+  };
 
   useEffect(() => {
     const closeDropdown = (e: MouseEvent) => {
@@ -251,6 +327,52 @@ function SummaryPageImpl(): React.JSX.Element {
   const [contracts, setContracts] = useState<Array<{ clientName?: string; exists?: string; aligns?: string }>>([]);
   const [pensionData, setPensionData] = useState<{ companyRegistered?: string; eligibilityChecks?: Record<string, unknown> }>({});
 
+  const buildCurrentSignature = (): string => buildSummarySignature({
+    companyName,
+    progress,
+    employees: employees.map((e) => ({
+      id: e.id,
+      employee_full_name: e.employee_full_name,
+      nationality: e.nationality,
+      check_date: e.check_date || null,
+      employment_start_date: (e.employment_start_date || e.startDate || null) as string | null,
+      min_22_year_age: e.min_22_year_age,
+      earning_gbp_10k_above: e.earning_gbp_10k_above,
+      auto_enrollment_date: e.auto_enrollment_date || null,
+      opted_out: e.opted_out,
+    })),
+    contracts,
+    pensionData,
+    financialData: {
+      balance: financialData.balance,
+      incoming: financialData.incoming,
+      outgoing: financialData.outgoing,
+      netCashFlow: financialData.netCashFlow,
+      paymentsReflected: financialData.paymentsReflected,
+      futureEngagement: financialData.futureEngagement,
+      transactions: financialData.transactions?.map((t) => ({ status: t.status })),
+    }
+  });
+
+  useEffect(() => {
+    if (!recordId || loading || !savedHtml) return;
+    const signature = buildCurrentSignature();
+    const storedSig = sessionStorage.getItem(`summary_source_sig_${recordId}`);
+    const serverSig = typeof resultSections.summary_source_sig === "string" ? resultSections.summary_source_sig : null;
+    const existingSig = storedSig || serverSig;
+
+    if (!existingSig && !signatureCommittedRef.current) {
+      signatureCommittedRef.current = true;
+      sessionStorage.setItem(`summary_source_sig_${recordId}`, signature);
+      void persistSummaryHtml(savedHtml, signature);
+      return;
+    }
+
+    if (existingSig && existingSig !== signature) {
+      void clearSummaryEdits();
+    }
+  }, [recordId, loading, savedHtml, employees, progress, companyName, pensionData, contracts, financialData, resultSections]);
+
   // Feedback State
   const [manualOverrides, setManualOverrides] = useState<Record<string, boolean>>({});
   const [comments, setComments] = useState<Record<string, string>>({});
@@ -349,6 +471,7 @@ function SummaryPageImpl(): React.JSX.Element {
 
               // 4. Contracts & Pension (from result_complete_sections)
               const saved = record.result_complete_sections || {};
+              setResultSections(saved);
               if (saved.contracts) setContracts(saved.contracts);
               if (saved.pension) setPensionData(saved.pension);
               if (saved.manual_overrides) setManualOverrides(saved.manual_overrides);
@@ -356,7 +479,7 @@ function SummaryPageImpl(): React.JSX.Element {
               // 5. Financial Data
               const finRes = await listFinancialRecordsAction(token);
               if (finRes.success && finRes.data) {
-                const finRecord = finRes.data.find((fr) => fr.HRValidationRecord_id === Number(id));
+                const finRecord = [...finRes.data].reverse().find((fr) => fr.HRValidationRecord_id === Number(id));
                 if (finRecord) {
                   const incoming = finRecord.total_incoming_gbp_credits ? parseFloat(finRecord.total_incoming_gbp_credits) : undefined;
                   const outgoing = finRecord.total_outgoing_gbp_debits ? parseFloat(finRecord.total_outgoing_gbp_debits) : undefined;
@@ -558,17 +681,29 @@ function SummaryPageImpl(): React.JSX.Element {
         sessionStorage.removeItem(`bank_name_${recordId}`);
         sessionStorage.removeItem(`pension_data_${recordId}`);
         sessionStorage.removeItem(`report_edits_${recordId}`);
+        sessionStorage.removeItem(`summary_source_sig_${recordId}`);
       }
       sessionStorage.removeItem("current_hr_record_id");
     } catch { }
     router.push("/employer/sections/company");
   };
 
-  const persistSummaryHtml = async (html: string) => {
+  const persistSummaryHtml = async (html: string, signature?: string) => {
     if (!recordId) return;
     try {
       const token = getClientToken();
-      await updateHRValidationRecordAction(Number(recordId), { html_content_for_summary: html }, token);
+      const payload: Record<string, any> = { html_content_for_summary: html };
+      if (signature) {
+        payload.result_complete_sections = {
+          ...resultSections,
+          summary_source_sig: signature,
+        };
+      }
+
+      await updateHRValidationRecordAction(Number(recordId), payload, token);
+      if (signature) {
+        setResultSections((prev) => ({ ...prev, summary_source_sig: signature }));
+      }
     } catch (err) {
       console.error("Error saving summary HTML:", err);
     }
@@ -628,8 +763,12 @@ function SummaryPageImpl(): React.JSX.Element {
                 if (printContainerRef.current) {
                   const html = printContainerRef.current.innerHTML;
                   setSavedHtml(html);
-                  if (recordId) sessionStorage.setItem(`report_edits_${recordId}`, html);
-                  void persistSummaryHtml(html);
+                  if (recordId) {
+                    sessionStorage.setItem(`report_edits_${recordId}`, html);
+                    const signature = buildCurrentSignature();
+                    sessionStorage.setItem(`summary_source_sig_${recordId}`, signature);
+                    void persistSummaryHtml(html, signature);
+                  }
                 }
                 setIsEditMode(false);
               } else {

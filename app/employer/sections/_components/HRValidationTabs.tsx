@@ -8,8 +8,8 @@ import { useRouter } from 'next/navigation';
 const TABS = [
   { label: "0. Company", id: "company" },
   { label: "1. Staff List", id: "staff" },
-  { label: "2. RTW Compliance", id: "rtw" },
-  { label: "3. Bank Statement", id: "bank" },
+  { label: "2. Bank Statement", id: "bank" },
+  { label: "3. RTW Compliance", id: "rtw" },
   { label: "4. Pension", id: "pension" },
   { label: "5. Authorising Officer", id: "auth" },
   { label: "6. Contracts", id: "contracts" },
@@ -88,13 +88,13 @@ export default function HRValidationTabs({
     // Standard sequence validation
     if (tabId === "staff") return true; // Company is filled, so Staff is unlocked
     
-    // For RTW, we need staff to be complete
+    // For Bank Statement, we need staff to be complete
     const isStaffDone = tabProgress.staff || staffComplete;
-    if (tabId === "rtw") return !!isStaffDone;
+    if (tabId === "bank") return !!isStaffDone;
     
     // Following steps use the progress map
-    if (tabId === "bank") return !!tabProgress.rtw;
-    if (tabId === "pension") return !!tabProgress.bank;
+    if (tabId === "rtw") return !!tabProgress.bank;
+    if (tabId === "pension") return !!tabProgress.rtw;
     if (tabId === "auth") return !!tabProgress.pension;
     if (tabId === "contracts") return !!tabProgress.auth;
     if (tabId === "financial") return !!tabProgress.contracts;
