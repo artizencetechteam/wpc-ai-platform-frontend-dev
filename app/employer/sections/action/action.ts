@@ -139,7 +139,7 @@ export type Employee = {
   AO_Credentials_holds_shared?: boolean;
   // RTW fields
   rtw_document_type?: string | null;
-  visa_expiry_date?: string | null;
+  rtw_expiry_date?: string | null;
   passport_number?: string | null;
   check_date?: string | null;
   company_name?: string | null;
@@ -168,6 +168,7 @@ export type AddEmployeePayload = {
   check_date?: string | null;
   company_name?: string | null;
   passport_number?: string | null;
+  rtw_expiry_date?: string | null;
 };
 
 type AR<T = null> = { success: boolean; message: string; data?: T };
