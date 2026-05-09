@@ -54,9 +54,10 @@ async function apiFetch(
   clientToken?: string,
 ): Promise<Response> {
   const { accessToken, sessionToken } = await resolveToken(clientToken);
+  const headers = makeHeaders(accessToken, sessionToken);
   let res = await fetch(url, {
     ...options,
-    headers: makeHeaders(accessToken, sessionToken),
+    headers,
     cache: 'no-store',
   });
 
@@ -70,9 +71,10 @@ async function apiFetch(
     if (refreshResult.success && refreshResult.accessToken) {
       console.log('[apiFetch] Refresh successful. Retrying original request...');
       // Retry with new token
+      const retryHeaders = makeHeaders(refreshResult.accessToken, sessionToken);
       res = await fetch(url, {
         ...options,
-        headers: makeHeaders(refreshResult.accessToken, sessionToken),
+        headers: retryHeaders,
         cache: 'no-store',
       });
       console.log(`[apiFetch] Retry result → ${res.status}`);
@@ -292,6 +294,25 @@ export async function listHRValidationRecordsAction(
     return { success: true, message: 'OK', data: records };
   } catch (e) {
     console.error('[listHRValidationRecordsAction]', e);
+    return { success: false, message: 'Network error.' };
+  }
+}
+
+export async function getHRValidationRecordAction(
+  id: number,
+  clientToken?: string,
+): Promise<AR<HRValidationRecord>> {
+  try {
+    const res = await apiFetch(
+      `${BASE_URL}/api/hr-validation/hr-validation-records/${id}/`,
+      {},
+      clientToken,
+    );
+    const data = await res.json();
+    if (!res.ok) return { success: false, message: errMsg(data) };
+    return { success: true, message: 'OK', data };
+  } catch (e) {
+    console.error('[getHRValidationRecordAction]', e);
     return { success: false, message: 'Network error.' };
   }
 }

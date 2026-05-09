@@ -321,7 +321,7 @@ function BankStatementImpl() {
       const p = pStr ? JSON.parse(pStr) : {};
       p.bank = true;
       sessionStorage.setItem(`hr_progress_${hrRecordId}`, JSON.stringify(p));
-      router.push(`/employer/sections/pension?recordId=${hrRecordId}`);
+      router.push(`/employer/sections/pension?rewcordId=${hrRecordId}`);
     }
   };
 
