@@ -126,12 +126,13 @@ function NoMigrantScreen({ onContinue }: { onContinue: () => void }) {
 // --- RTWVerificationScreen ---
 interface RTWVerificationScreenProps {
   migrants: Employee[];
+  recordId: number | null;
   onBackToBank: () => void;
   onContinue: () => void;
   onSaveEmployee: (empId: string, data: any) => Promise<void>;
 }
 
-function RTWVerificationScreen({ migrants, onBackToBank, onContinue, onSaveEmployee }: RTWVerificationScreenProps) {
+function RTWVerificationScreen({ migrants, recordId, onBackToBank, onContinue, onSaveEmployee }: RTWVerificationScreenProps) {
   const [currentIndex, setCurrentIndex] = useState(0);
   const employee = migrants[currentIndex];
   const hasDocument = !!(employee?.documentType || employee?.documentNumber);
@@ -148,6 +149,8 @@ function RTWVerificationScreen({ migrants, onBackToBank, onContinue, onSaveEmplo
   const [isEditing, setIsEditing] = useState(false);
   const [manualRefNumber, setManualRefNumber] = useState("");
   const [expiryDate, setExpiryDate] = useState("");
+  const [isVerifying, setIsVerifying] = useState(false);
+  const [verificationResult, setVerificationResult] = useState<any>(null);
 
 
   // ── RTW Compliance: check date must be BEFORE employment start date ──────────
@@ -174,6 +177,7 @@ function RTWVerificationScreen({ migrants, onBackToBank, onContinue, onSaveEmplo
       setManualRefNumber(employee.documentNumber || employee.passportNumber || "");
       setExpiryDate(toISODate(extractedData?.rtw_expiry_date || extractedData?.expiry_date || extractedData?.visa_expiry_date || employee.rtw_expiry_date) || "");
       setIsEditing(false); // Reset edit mode when switching employees
+      setVerificationResult(null);
     }
   }, [currentIndex, extractedData, employee]);
 
@@ -258,6 +262,41 @@ function RTWVerificationScreen({ migrants, onBackToBank, onContinue, onSaveEmplo
     } finally {
       setIsSubmitting(false);
       toast.dismiss(loadingToast);
+    }
+  };
+
+  const handleVerifyWithAI = async () => {
+    if (!recordId) return;
+    setIsVerifying(true);
+    const loadingToast = toast.loading("Verifying with AI...");
+    try {
+      const cachedTxStr = sessionStorage.getItem(`bank_transactions_${recordId}`);
+      if (!cachedTxStr) {
+        toast.error("Bank transactions not found. Please revisit the Bank Statement step to parse the statement again.", { id: loadingToast });
+        setIsVerifying(false);
+        return;
+      }
+      
+      const transactions = JSON.parse(cachedTxStr);
+
+      toast.loading("Running compliance verification...", { id: loadingToast });
+      const formattedCheckDate = checkDate ? checkDate.split("-").reverse().join("-") : "";
+
+      const verifyPayload = {
+        file_url: rtwDocumentUrl || employee.rtw_document_url,
+        bank_transactions: transactions,
+        check_date: formattedCheckDate,
+        employee_name: manualName || employee.employee_full_name,
+      };
+
+      const res = await axios.post("/api/late-employee-verification", verifyPayload);
+      setVerificationResult(res.data.result || res.data);
+      toast.success("Verification complete", { id: loadingToast });
+    } catch (err: any) {
+      console.error("AI Verification error:", err);
+      toast.error(err.response?.data?.details || err.response?.data?.message || "Failed to verify with AI.", { id: loadingToast });
+    } finally {
+      setIsVerifying(false);
     }
   };
 
@@ -384,28 +423,44 @@ function RTWVerificationScreen({ migrants, onBackToBank, onContinue, onSaveEmplo
                 )}
               </div>
 
-              {!isEditing ? (
-                <button
-                  onClick={() => setIsEditing(true)}
-                  style={{
-                    fontSize: "12px", color: "#0852C9", fontWeight: "600",
-                    background: "none", border: "none", cursor: "pointer",
-                    textDecoration: "underline"
-                  }}
-                >
-                  Edit Details Manually
-                </button>
-              ) : (
-                <button
-                  onClick={() => setIsEditing(false)}
-                  style={{
-                    fontSize: "12px", color: "#64748B", fontWeight: "600",
-                    background: "none", border: "none", cursor: "pointer"
-                  }}
-                >
-                  Cancel Edit
-                </button>
-              )}
+              <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                {isNonCompliant && !verificationResult && (
+                  <button
+                    onClick={handleVerifyWithAI}
+                    disabled={isVerifying}
+                    style={{
+                      padding: "6px 12px", backgroundColor: "#DC2626", color: "white",
+                      border: "none", borderRadius: "6px", fontSize: "12px", fontWeight: "600",
+                      cursor: isVerifying ? "not-allowed" : "pointer", display: "flex", alignItems: "center", gap: "6px"
+                    }}
+                  >
+                    {isVerifying ? <SpinnerIcon color="#fff" /> : <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>}
+                    {isVerifying ? "Verifying..." : "Verify with AI"}
+                  </button>
+                )}
+                {!isEditing ? (
+                  <button
+                    onClick={() => setIsEditing(true)}
+                    style={{
+                      fontSize: "12px", color: "#0852C9", fontWeight: "600",
+                      background: "none", border: "none", cursor: "pointer",
+                      textDecoration: "underline"
+                    }}
+                  >
+                    Edit Details Manually
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => setIsEditing(false)}
+                    style={{
+                      fontSize: "12px", color: "#64748B", fontWeight: "600",
+                      background: "none", border: "none", cursor: "pointer"
+                    }}
+                  >
+                    Cancel Edit
+                  </button>
+                )}
+              </div>
             </div>
 
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "16px" }}>
@@ -537,12 +592,43 @@ function RTWVerificationScreen({ migrants, onBackToBank, onContinue, onSaveEmplo
                 display: "flex", alignItems: "flex-start", gap: "10px",
               }}>
                 <AlertTriangleIcon />
-                <div>
+                <div style={{ flex: 1 }}>
                   <div style={{ fontSize: "13px", fontWeight: "700", color: "#DC2626", marginBottom: "3px" }}>Compliance Violation Detected</div>
-                  <div style={{ fontSize: "12.5px", color: "#B91C1C", lineHeight: "1.55" }}>
+                  <div style={{ fontSize: "12.5px", color: "#B91C1C", lineHeight: "1.55", marginBottom: "12px" }}>
                     RTW check was conducted on <strong>{formatDate(checkDate)}</strong>, which is on or after the employment start date (<strong>{formattedStart}</strong>).
                     The Right to Work check must be completed <em>before</em> employment begins.
                   </div>
+                  {verificationResult && (
+                    <div style={{
+                      marginTop: "12px", padding: "14px", backgroundColor: "white", 
+                      borderRadius: "8px", border: "1px solid #FCA5A5"
+                    }}>
+                      <h4 style={{ margin: "0 0 8px", fontSize: "14px", color: "#991B1B" }}>AI Verification Result</h4>
+                      {verificationResult.salary_exist !== undefined && (
+                        <div style={{ fontSize: "13px", marginBottom: "6px", color: "#7F1D1D" }}>
+                          <strong>Salary Evidence:</strong> {verificationResult.salary_exist ? "Exists before check date" : "Not found"}
+                        </div>
+                      )}
+                      {verificationResult.comments && (
+                        <>
+                          <div style={{ fontSize: "13px", marginBottom: "6px", color: "#7F1D1D" }}>
+                            <strong>Status:</strong> {verificationResult.comments.status}
+                          </div>
+                          {verificationResult.comments.actions_required && verificationResult.comments.actions_required.length > 0 && (
+                            <div style={{ fontSize: "13px", marginBottom: "6px", color: "#7F1D1D" }}>
+                              <strong>Actions Required:</strong>
+                              <ul style={{ margin: "4px 0 0", paddingLeft: "20px" }}>
+                                {verificationResult.comments.actions_required.map((action: string, i: number) => <li key={i}>{action}</li>)}
+                              </ul>
+                            </div>
+                          )}
+                          <div style={{ fontSize: "13px", color: "#7F1D1D" }}>
+                            <strong>Outcome:</strong> {verificationResult.comments.outcome}
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
             )}
@@ -769,6 +855,7 @@ function RTWComplianceImpl() {
       {loaded && (hasMigrants
         ? <RTWVerificationScreen
           migrants={migrants}
+          recordId={recordId}
           onBackToBank={handleBack}
           onContinue={handleContinueToBank}
           onSaveEmployee={handleSaveEmployee}
