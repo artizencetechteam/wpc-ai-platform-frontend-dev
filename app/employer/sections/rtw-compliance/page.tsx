@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import axios from "axios";
 import toast from "react-hot-toast";
 import HRValidationTabs from "../_components/HRValidationTabs";
-import { listHRValidationRecordsAction, listEmployeesAction, updateHRValidationRecordAction, updateEmployeeAction } from "@/app/employer/sections/action/action";
+import { listHRValidationRecordsAction, listEmployeesAction, updateHRValidationRecordAction, updateEmployeeAction, getHRValidationRecordAction } from "@/app/employer/sections/action/action";
 import { getClientToken } from "@/app/employer/sections/company/page";
 
 
@@ -270,14 +270,43 @@ function RTWVerificationScreen({ migrants, recordId, onBackToBank, onContinue, o
     setIsVerifying(true);
     const loadingToast = toast.loading("Verifying with AI...");
     try {
-      const cachedTxStr = sessionStorage.getItem(`bank_transactions_${recordId}`);
-      if (!cachedTxStr) {
-        toast.error("Bank transactions not found. Please revisit the Bank Statement step to parse the statement again.", { id: loadingToast });
+      const token = getClientToken();
+      const hrRes = await getHRValidationRecordAction(recordId, token);
+
+      if (!hrRes.success || !hrRes.data || !hrRes.data.transactions) {
+        toast.error("Bank transactions not found in the HR record. Please revisit the Bank Statement step.", { id: loadingToast });
         setIsVerifying(false);
         return;
       }
-      
-      const transactions = JSON.parse(cachedTxStr);
+
+      let rawTransactions = hrRes.data.transactions;
+      if (typeof rawTransactions === 'string') {
+        try { rawTransactions = JSON.parse(rawTransactions); } catch (e) { }
+      }
+      const txArray = Array.isArray(rawTransactions) ? rawTransactions : (rawTransactions?.transactions || []);
+
+      const transactions = txArray.map((t: any) => {
+        let parsed_date = null;
+        if (t.date) {
+          const parts = t.date.split('-');
+          if (parts.length === 3) {
+            parsed_date = `${parts[2]}-${parts[1]}-${parts[0]}T00:00:00`;
+          }
+        }
+        return {
+          date: t.date,
+          description: t.reference || t.description || null,
+          paid_out: t.type === 'outgoing' ? t.amount : null,
+          paid_in: t.type === 'incoming' ? t.amount : null,
+          balance: t.balance ?? null,
+          flags: t.flags || {
+            is_large: false,
+            is_salary: false,
+            is_contractor: false
+          },
+          parsed_date: parsed_date
+        };
+      });
 
       toast.loading("Running compliance verification...", { id: loadingToast });
       const formattedCheckDate = checkDate ? checkDate.split("-").reverse().join("-") : "";
@@ -434,7 +463,7 @@ function RTWVerificationScreen({ migrants, recordId, onBackToBank, onContinue, o
                       cursor: isVerifying ? "not-allowed" : "pointer", display: "flex", alignItems: "center", gap: "6px"
                     }}
                   >
-                    {isVerifying ? <SpinnerIcon color="#fff" /> : <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>}
+                    {isVerifying ? <SpinnerIcon color="#fff" /> : <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" /></svg>}
                     {isVerifying ? "Verifying..." : "Verify with AI"}
                   </button>
                 )}
@@ -600,7 +629,7 @@ function RTWVerificationScreen({ migrants, recordId, onBackToBank, onContinue, o
                   </div>
                   {verificationResult && (
                     <div style={{
-                      marginTop: "12px", padding: "14px", backgroundColor: "white", 
+                      marginTop: "12px", padding: "14px", backgroundColor: "white",
                       borderRadius: "8px", border: "1px solid #FCA5A5"
                     }}>
                       <h4 style={{ margin: "0 0 8px", fontSize: "14px", color: "#991B1B" }}>AI Verification Result</h4>
