@@ -12,6 +12,7 @@ import {
   listHRValidationRecordsAction,
   getHRValidationRecordAction,
   listEmployeesAction,
+  listFinancialRecordsAction,
 } from "@/app/employer/sections/action/action";
 import { getClientToken } from "@/app/employer/sections/company/page";
 
@@ -352,9 +353,9 @@ function BalanceStep({ onNext, onSave, initialBalance, isSubmitting = false }: B
   const isCompliant = num !== null && !isNaN(num) && num >= MIN_BALANCE;
   const isInsufficient = num !== null && !isNaN(num) && num < MIN_BALANCE && balance !== "";
 
-  const handleNext = (): void => { 
-    onSave({ balance: num, Closing_Balance: num }); 
-    onNext(); 
+  const handleNext = (): void => {
+    onSave({ balance: num, Closing_Balance: num });
+    onNext();
   };
 
   return (
@@ -564,11 +565,11 @@ function InvestmentsStep({ onNext, onPrev, onSave, initialTransactions, initialO
       const stats = bankStatement.stats || {};
       const extractedOpening = stats.opening_balance ?? null;
       const extractedClosing = stats.closing_balance ?? null;
-      
+
       if (extractedOpening !== null) setManualOpening(String(extractedOpening));
       if (extractedClosing !== null) setManualClosing(String(extractedClosing));
 
-      onSave({ 
+      onSave({
         bank_statement_url: publicUrl,
         payment_incoming_total: stats.total_incoming ?? null,
         payment_outgoing_total: stats.total_outgoing ?? null,
@@ -970,8 +971,8 @@ function ContractsSyncStep({ onComplete, onPrev, savedContracts, onSave, initial
   const [verificationResults, setVerificationResults] = useState<VerificationResult[] | null>(financialData.contract_verification_results ?? null);
 
   const persistSelection = (payments: string | null, future: string | null, results: VerificationResult[] | null = null): void => {
-    onSave({ 
-      paymentsReflected: payments, 
+    onSave({
+      paymentsReflected: payments,
       futureEngagement: future,
       contract_verification_results: results || verificationResults
     });
@@ -1010,7 +1011,7 @@ function ContractsSyncStep({ onComplete, onPrev, savedContracts, onSave, initial
       const response = await axios.post("/api/verify-contracts", payload);
       const results = response.data.verification_summary || [];
       setVerificationResults(results);
-      
+
       if (response.data.total_verified > 0) {
         toast.success(`Successfully verified ${response.data.total_verified} contract(s)!`);
         setPaymentsReflected("yes");
@@ -1217,7 +1218,7 @@ function FinancialPageImpl(): React.JSX.Element {
               setSavedContracts(hrRecord.result_complete_sections?.contracts || []);
               setFinancialData(prev => ({
                 ...prev,
-                transactions: hrRecord.transactions 
+                transactions: hrRecord.transactions
                   ? (typeof hrRecord.transactions === 'string' ? JSON.parse(hrRecord.transactions) : hrRecord.transactions)
                   : prev.transactions,
                 Opening_Balance: openingBalance ?? prev.Opening_Balance,
@@ -1237,6 +1238,19 @@ function FinancialPageImpl(): React.JSX.Element {
             }
           }
 
+          // Fetch Financial Record
+          const finRes = await listFinancialRecordsAction(token);
+          if (finRes.success && finRes.data) {
+            const finRecord = [...finRes.data].reverse().find((fr) => fr.HRValidationRecord_id === numId);
+            if (finRecord) {
+              setFinancialRecordId(finRecord.id);
+              setFinancialData(prev => ({
+                ...prev,
+                paymentsReflected: finRecord.payments_reflected_in_bank === true ? "yes" : finRecord.payments_reflected_in_bank === false ? "no" : prev.paymentsReflected,
+                futureEngagement: finRecord.is_future_engagement === true ? "yes" : finRecord.is_future_engagement === false ? "no" : prev.futureEngagement,
+              }));
+            }
+          }
         } catch (err) {
           console.error("Error fetching financial records:", err);
         } finally {

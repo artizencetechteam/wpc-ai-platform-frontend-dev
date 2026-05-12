@@ -243,6 +243,14 @@ function BankStatementImpl() {
       const bankStatement = resData.bank_statement || {};
       const fetchedTransactions = bankStatement.all_transactions || [];
 
+      if (hrRecordId) {
+        try {
+          sessionStorage.setItem(`bank_transactions_${hrRecordId}`, JSON.stringify(fetchedTransactions));
+        } catch (e) {
+          console.warn("Failed to save to session storage", e);
+        }
+      }
+
       const mapped = fetchedTransactions.map((t: any, idx: number) => {
         const amt = t.paid_out || t.paid_in || t.amount || t.value || 0;
         return {
@@ -321,7 +329,7 @@ function BankStatementImpl() {
       const p = pStr ? JSON.parse(pStr) : {};
       p.bank = true;
       sessionStorage.setItem(`hr_progress_${hrRecordId}`, JSON.stringify(p));
-      router.push(`/employer/sections/pension?rewcordId=${hrRecordId}`);
+      router.push(`/employer/sections/rtw-compliance?recordId=${hrRecordId}`);
     }
   };
 
@@ -781,7 +789,7 @@ function BankStatementImpl() {
               }}
             >
               {isSubmitting && <SpinnerIcon color="#fff" />}
-              {isSubmitting ? "Saving..." : "Continue to Pension Compliance"}
+              {isSubmitting ? "Saving..." : "Continue to RTW Compliance"}
             </button>
           </div>
         )}

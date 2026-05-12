@@ -5,7 +5,7 @@ export async function POST(req: Request) {
     const body = await req.json();
 
     // Forward to the external API
-    const response = await fetch("http://37.27.113.235:7323/verify-contracts", {
+    const response = await fetch("http://37.27.113.235:8231/late_employee_verification/", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -15,7 +15,7 @@ export async function POST(req: Request) {
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error("External Verify Contracts API Error:", errorText);
+      console.error("External Late Employee Verification API Error:", errorText);
       return NextResponse.json(
         { error: "Verification failed", details: errorText },
         { status: response.status }
@@ -25,7 +25,7 @@ export async function POST(req: Request) {
     const data = await response.json();
     return NextResponse.json(data);
   } catch (error: any) {
-    console.error("Verify Contracts Proxy Error:", error);
+    console.error("Late Employee Verification Proxy Error:", error);
     return NextResponse.json(
       { error: "Internal server error during verification", details: error.message },
       { status: 500 }
