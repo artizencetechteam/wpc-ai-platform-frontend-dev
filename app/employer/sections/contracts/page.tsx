@@ -359,13 +359,18 @@ function ContractsPageImpl(): React.JSX.Element {
         headers: { "Content-Type": file.type },
       });
 
-      // 2. Extract data
-      const formData = new FormData();
-      formData.append("file", file);
-      const response = await axios.post("/api/extract-contract", formData);
+      // 2. Extract data (send URL to extraction service)
+      const encodedPdfUrl = encodeURI(publicUrl);
+      const response = await axios.post("/api/extract-contract", {
+        pdf_url: encodedPdfUrl,
+      });
       const resData = response.data;
       
       setExtractionData(resData);
+      try {
+        const storageKey = recordId ? `contract_extraction_${recordId}` : "contract_extraction";
+        sessionStorage.setItem(storageKey, JSON.stringify(resData));
+      } catch {}
 
       if (resData.contracts && Array.isArray(resData.contracts)) {
         const clientParty = resData.parties?.find((p: any) => p.role === "Client");
@@ -383,6 +388,10 @@ function ContractsPageImpl(): React.JSX.Element {
         }));
 
         setContracts((prev) => [...prev, ...newContracts]);
+        try {
+          const storageKey = recordId ? `contract_list_${recordId}` : "contract_list";
+          sessionStorage.setItem(storageKey, JSON.stringify([...contracts, ...newContracts]));
+        } catch {}
         toast.success(`Successfully extracted ${newContracts.length} contracts.`);
       } else {
         toast.error("No contracts found in the document.");

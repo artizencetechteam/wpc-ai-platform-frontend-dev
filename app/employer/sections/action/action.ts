@@ -1,7 +1,7 @@
 'use server';
 
 import { cookies } from 'next/headers';
-import { refreshTokenAction } from '@/app/auth/_action/auth.action';
+import { refreshTokenAction, logoutAction } from '@/app/auth/_action/auth.action';
 
 const BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://37.27.113.235:6767';
 
@@ -80,6 +80,7 @@ async function apiFetch(
       console.log(`[apiFetch] Retry result → ${res.status}`);
     } else {
       console.warn('[apiFetch] Refresh failed or no new token. Returning original 401.');
+      await logoutAction();
     }
   }
 

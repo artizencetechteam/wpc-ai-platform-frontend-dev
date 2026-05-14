@@ -104,6 +104,8 @@ function BankStatementImpl() {
   const [searchAmount, setSearchAmount] = useState("");
   const [searchType, setSearchType] = useState("");
   const [searchReference, setSearchReference] = useState("");
+  const [filterBy, setFilterBy] = useState("all");
+  const [employeeTab, setEmployeeTab] = useState("all");
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editValues, setEditValues] = useState<any | null>(null);
 
@@ -309,6 +311,16 @@ function BankStatementImpl() {
   };
 
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const isLargeTransaction = (t: any) => t.flags?.is_large || ((!t.flags || Object.keys(t.flags).length === 0) && t.amount >= 2000);
+  const isSalaryTransaction = (t: any) => t.flags?.is_salary || (t.reference || "").toLowerCase().includes("salary");
+  const isLoanTransaction = (t: any) => (t.reference || "").toLowerCase().includes("loan");
+  const matchesEmployee = (t: any, name: string) => (t.reference || "").toLowerCase().includes(name.toLowerCase());
+
+  const employeeFilterOptions = employees
+    .map((e) => e?.employee_full_name)
+    .filter((n) => typeof n === "string" && n.trim().length > 0)
+    .map((n) => n.trim());
+  const uniqueEmployeeOptions = Array.from(new Set(employeeFilterOptions));
   const handleContinue = async () => {
     if (!bankName) return;
     setIsSubmitting(true);
@@ -458,6 +470,33 @@ function BankStatementImpl() {
               <div style={{ marginBottom: "24px" }}>
                 <h3 style={{ margin: "0 0 12px", fontSize: "15px", fontWeight: "600", color: "#0F172A" }}>Parsed Transactions</h3>
 
+                {uniqueEmployeeOptions.length > 0 && (
+                  <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", marginBottom: "12px" }}>
+                    {["All Employees", ...uniqueEmployeeOptions].map((name) => {
+                      const value = name === "All Employees" ? "all" : name;
+                      const isActive = employeeTab === value;
+                      return (
+                        <button
+                          key={name}
+                          onClick={() => setEmployeeTab(value)}
+                          style={{
+                            padding: "6px 12px",
+                            borderRadius: "999px",
+                            border: `1.5px solid ${isActive ? "#0852C9" : "#E2E8F0"}`,
+                            backgroundColor: isActive ? "#EFF6FF" : "white",
+                            color: isActive ? "#0F172A" : "#475569",
+                            fontSize: "12.5px",
+                            fontWeight: 600,
+                            cursor: "pointer",
+                          }}
+                        >
+                          {name}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+
                 {/* Search Filters */}
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: "10px", marginBottom: "12px" }}>
                   {[
@@ -479,6 +518,19 @@ function BankStatementImpl() {
                       />
                     </div>
                   ))}
+                  <div style={{ position: "relative" }}>
+                    <select
+                      value={filterBy}
+                      onChange={(e) => setFilterBy(e.target.value)}
+                      style={{ padding: "8px 12px", border: "1.5px solid #E2E8F0", borderRadius: "6px", fontSize: "13px", outline: "none", width: "100%", boxSizing: "border-box", backgroundColor: "white" }}
+                    >
+                      <option value="all">Filter: All</option>
+                      <option value="salary">Salary</option>
+                      <option value="large">Large Amounts</option>
+                      <option value="flag">Flagged</option>
+                      <option value="loan">Loan</option>
+                    </select>
+                  </div>
                 </div>
 
                 {/* Table */}
@@ -498,6 +550,11 @@ function BankStatementImpl() {
                         if (searchAmount && !String(t.amount).includes(searchAmount)) return false;
                         if (searchType && !t.type.toLowerCase().includes(searchType.toLowerCase())) return false;
                         if (searchReference && !t.reference.toLowerCase().includes(searchReference.toLowerCase())) return false;
+                        if (filterBy === "salary" && !isSalaryTransaction(t)) return false;
+                        if (filterBy === "large" && !isLargeTransaction(t)) return false;
+                        if (filterBy === "flag" && t.status !== "fail") return false;
+                        if (filterBy === "loan" && !isLoanTransaction(t)) return false;
+                        if (employeeTab !== "all" && !matchesEmployee(t, employeeTab)) return false;
                         return true;
                       })
                       .map((t) => {
