@@ -49,7 +49,12 @@ interface Transaction {
 interface VerificationResult {
   contract: string;
   status: string;
-  match_details: string | null;
+  match_details: {
+    date?: string;
+    description?: string;
+    amount?: number | string;
+    type?: string;
+  } | null;
 }
 
 interface FinancialData {
@@ -988,24 +993,30 @@ function ContractsSyncStep({ onComplete, onPrev, savedContracts, onSave, initial
     const loadingToast = toast.loading("Verifying contracts with bank statements...");
 
     try {
-      const payload = {
-        contract_result: {
-          contracts: savedContracts.map(c => ({
-            contract_amount: c.contract_amount || "0 GBP",
-            period: c.period || "monthly"
-          })),
-          parties: Array.from(new Set(savedContracts.map(c => c.clientName).filter(Boolean)))
-        },
-        bank_result: {
-          data: {
-            transactions: financialData.transactions?.map(t => ({
-              date: t.date,
-              description: t.reference,
-              paid_in: t.type === "incoming" ? t.amount : 0,
-              paid_out: t.type === "outgoing" ? t.amount : 0
-            })) || []
-          }
+      let contractResult = null;
+      try {
+        const recordId = sessionStorage.getItem("current_hr_record_id");
+        if (recordId) {
+          const stored = sessionStorage.getItem(`contract_extraction_${recordId}`);
+          contractResult = stored ? JSON.parse(stored) : null;
         }
+      } catch {}
+
+      if (!contractResult) {
+        toast.error("Contract extraction data not found.");
+        return;
+      }
+
+      const bankResult = (financialData.transactions || []).map(t => ({
+        date: t.date,
+        description: t.reference,
+        paid_in: t.type === "incoming" ? t.amount : null,
+        paid_out: t.type === "outgoing" ? t.amount : null
+      }));
+
+      const payload = {
+        contract_result: contractResult,
+        bank_result: bankResult
       };
 
       const response = await axios.post("/api/verify-contracts", payload);
@@ -1096,11 +1107,15 @@ function ContractsSyncStep({ onComplete, onPrev, savedContracts, onSave, initial
       {verificationResults && verificationResults.some(r => r.match_details) && (
         <div style={{ marginBottom: "18px", padding: "14px", backgroundColor: "#F0FDF4", borderRadius: "8px", border: "1.5px solid #86EFAC" }}>
           <p style={{ margin: "0 0 8px", fontSize: "13px", fontWeight: "700", color: "#166534" }}>AI Match Findings:</p>
-          {verificationResults.map((r, i) => r.match_details && (
-            <div key={i} style={{ fontSize: "12.5px", color: "#166534", marginBottom: "4px" }}>
-              • <strong>{r.contract}</strong>: {r.match_details}
-            </div>
-          ))}
+          {verificationResults.map((r, i) => {
+            if (!r.match_details) return null;
+            const details = [r.match_details.description, r.match_details.date, r.match_details.amount].filter(Boolean).join(" • ");
+            return (
+              <div key={i} style={{ fontSize: "12.5px", color: "#166534", marginBottom: "4px" }}>
+                • <strong>{r.contract}</strong>: {details || "Match found"}
+              </div>
+            );
+          })}
         </div>
       )}
 
