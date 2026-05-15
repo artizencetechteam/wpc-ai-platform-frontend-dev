@@ -47,6 +47,75 @@ interface AddContractFormProps {
   onParseDocument?: (documentUrl: string) => Promise<void>;
 }
 
+const MONTH_MAP: Record<string, string> = {
+  jan: "01", feb: "02", mar: "03", apr: "04", may: "05", jun: "06",
+  jul: "07", aug: "08", sep: "09", oct: "10", nov: "11", dec: "12",
+};
+
+const formatDate = (raw?: string | null): string | null => {
+  if (!raw) return null;
+  const trimmed = String(raw).trim();
+  if (!trimmed) return null;
+
+  if (/^\d{2}-\d{2}-\d{4}$/.test(trimmed) || /^\d{2}\/\d{2}\/\d{4}$/.test(trimmed)) {
+    return trimmed.replace(/\//g, "-");
+  }
+
+  const isoMatch = trimmed.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (isoMatch) return `${isoMatch[3]}-${isoMatch[2]}-${isoMatch[1]}`;
+
+  const parts = trimmed.split(/\s+/);
+  if (parts.length === 3) {
+    const [dd, mon, yy] = parts;
+    const mm = MONTH_MAP[mon.toLowerCase()];
+    if (mm) {
+      const year = yy.length === 2 ? parseInt(yy, 10) + 2000 : parseInt(yy, 10);
+      return `${dd.padStart(2, "0")}-${mm}-${year}`;
+    }
+  }
+
+  return trimmed;
+};
+
+const toBankResult = (transactions: any[]): Array<{ date: string | null; description: string; paid_in: number | null; paid_out: number | null; }> => {
+  return transactions.map((t: any) => {
+    const date = formatDate(t.date || t.parsed_date || t.transaction_date);
+    const description = t.description || t.reference || t.note || t.narration || "Unknown";
+    const paidIn = t.paid_in ?? (t.type === "incoming" ? t.amount : null);
+    const paidOut = t.paid_out ?? (t.type === "outgoing" ? t.amount : null);
+    const paid_in = paidIn !== null && paidIn !== undefined ? Number(paidIn) : null;
+    const paid_out = paidOut !== null && paidOut !== undefined ? Number(paidOut) : null;
+    return { date, description, paid_in, paid_out };
+  });
+};
+
+const mergeContractExtractions = (extractions: any[]) => {
+  if (!Array.isArray(extractions) || extractions.length === 0) return null;
+  const sources = extractions.map((e) => e?.source).filter(Boolean);
+  const parties = extractions
+    .flatMap((e) => Array.isArray(e?.parties) ? e.parties : [])
+    .filter(Boolean)
+    .reduce((acc: any[], p: any) => {
+      const key = `${p?.role || ""}::${p?.entity_name || ""}`.toLowerCase();
+      if (!acc.some((x) => `${x?.role || ""}::${x?.entity_name || ""}`.toLowerCase() === key)) acc.push(p);
+      return acc;
+    }, []);
+  const contracts = extractions
+    .flatMap((e) => Array.isArray(e?.contracts) ? e.contracts : [])
+    .filter(Boolean);
+  const total_valid_contracts = extractions.reduce((sum, e) => {
+    const count = typeof e?.total_valid_contracts === "number" ? e.total_valid_contracts : (Array.isArray(e?.contracts) ? e.contracts.length : 0);
+    return sum + count;
+  }, 0);
+
+  return {
+    source: sources.length <= 1 ? (sources[0] || null) : sources,
+    parties,
+    total_valid_contracts,
+    contracts,
+  };
+};
+
 // ─── Session helpers ──────────────────────────────────────────────────────────
 
 const getProgress = (recordId: string | number | null): Progress => {
@@ -331,6 +400,38 @@ function ContractsPageImpl(): React.JSX.Element {
   const [extractionData, setExtractionData] = useState<any>(null);
   const [verificationResult, setVerificationResult] = useState<any>(null);
 
+  const getExtractionListKey = (id: number | null) => id ? `contract_extractions_${id}` : "contract_extractions";
+  const getExtractionKey = (id: number | null) => id ? `contract_extraction_${id}` : "contract_extraction";
+
+  const readExtractionList = (id: number | null): any[] => {
+    try {
+      const stored = sessionStorage.getItem(getExtractionListKey(id));
+      const parsed = stored ? JSON.parse(stored) : [];
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  };
+
+  const persistExtractionList = (id: number | null, list: any[]): void => {
+    try {
+      sessionStorage.setItem(getExtractionListKey(id), JSON.stringify(list));
+    } catch {}
+  };
+
+  const appendExtraction = (id: number | null, extraction: any): any[] => {
+    const next = [...readExtractionList(id), extraction];
+    persistExtractionList(id, next);
+    const merged = mergeContractExtractions(next);
+    if (merged) {
+      try {
+        sessionStorage.setItem(getExtractionKey(id), JSON.stringify(merged));
+      } catch {}
+      setExtractionData(merged);
+    }
+    return next;
+  };
+
   useEffect(() => {
     const queryId = searchParams.get("recordId") || searchParams.get("id");
     const id = queryId || sessionStorage.getItem("current_hr_record_id");
@@ -343,7 +444,15 @@ function ContractsPageImpl(): React.JSX.Element {
         const saved = await getSavedResults(parsedId);
         if (saved.business_nature) setBusinessNature(saved.business_nature);
         if (saved.contracts && Array.isArray(saved.contracts)) setContracts(saved.contracts);
-        if (saved.contract_extraction_data) setExtractionData(saved.contract_extraction_data);
+        try {
+          const listStored = sessionStorage.getItem(getExtractionListKey(parsedId));
+          const listParsed = listStored ? JSON.parse(listStored) : null;
+          const merged = Array.isArray(listParsed) && listParsed.length > 0 ? mergeContractExtractions(listParsed) : null;
+          if (merged) setExtractionData(merged);
+          else if (saved.contract_extraction_data) setExtractionData(saved.contract_extraction_data);
+        } catch {
+          if (saved.contract_extraction_data) setExtractionData(saved.contract_extraction_data);
+        }
         try {
           const vKey = `contract_verification_${parsedId}`;
           const stored = sessionStorage.getItem(vKey);
@@ -378,11 +487,7 @@ function ContractsPageImpl(): React.JSX.Element {
       });
       const resData = response.data;
       
-      setExtractionData(resData);
-      try {
-        const storageKey = recordId ? `contract_extraction_${recordId}` : "contract_extraction";
-        sessionStorage.setItem(storageKey, JSON.stringify(resData));
-      } catch {}
+      appendExtraction(recordId, resData);
 
       if (resData.contracts && Array.isArray(resData.contracts)) {
         const clientParty = resData.parties?.find((p: any) => p.role === "Client");
@@ -408,6 +513,8 @@ function ContractsPageImpl(): React.JSX.Element {
       } else {
         toast.error("No contracts found in the document.");
       }
+
+      if (recordId) await handleVerifyContracts();
     } catch (error: any) {
       console.error("Contract extraction error:", error);
       toast.error("Failed to extract contract details.");
@@ -426,11 +533,7 @@ function ContractsPageImpl(): React.JSX.Element {
         pdf_url: encodedPdfUrl,
       });
       const resData = response.data;
-      setExtractionData(resData);
-      try {
-        const storageKey = recordId ? `contract_extraction_${recordId}` : "contract_extraction";
-        sessionStorage.setItem(storageKey, JSON.stringify(resData));
-      } catch {}
+      appendExtraction(recordId, resData);
       toast.success("Contract parsed successfully.");
     } catch (error) {
       console.error("Manual contract parse error:", error);
@@ -447,8 +550,15 @@ function ContractsPageImpl(): React.JSX.Element {
     try {
       let contractResult = extractionData;
       if (!contractResult) {
-        const storageKey = `contract_extraction_${recordId}`;
-        const stored = sessionStorage.getItem(storageKey);
+        const listKey = getExtractionListKey(recordId);
+        const listStored = sessionStorage.getItem(listKey);
+        const listParsed = listStored ? JSON.parse(listStored) : null;
+        const merged = Array.isArray(listParsed) && listParsed.length > 0 ? mergeContractExtractions(listParsed) : null;
+        if (merged) contractResult = merged;
+      }
+      if (!contractResult) {
+        const singleKey = getExtractionKey(recordId);
+        const stored = sessionStorage.getItem(singleKey);
         contractResult = stored ? JSON.parse(stored) : null;
       }
       if (!contractResult) {
@@ -458,16 +568,45 @@ function ContractsPageImpl(): React.JSX.Element {
 
       const bankKey = `bank_transactions_${recordId}`;
       const bankStored = sessionStorage.getItem(bankKey);
-      const bankResult = bankStored ? JSON.parse(bankStored) : null;
-      if (!bankResult || !Array.isArray(bankResult) || bankResult.length === 0) {
+      let bankTransactions: any[] | null = bankStored ? JSON.parse(bankStored) : null;
+
+      if (!bankTransactions || !Array.isArray(bankTransactions) || bankTransactions.length === 0) {
+        const token = getClientToken();
+        const listRes = await listHRValidationRecordsAction(token);
+        if (listRes.success && Array.isArray(listRes.data)) {
+          const record = listRes.data.find((r: any) => r.id === recordId);
+          if (record?.transactions) {
+            try {
+              bankTransactions = typeof record.transactions === "string" ? JSON.parse(record.transactions) : record.transactions;
+            } catch {
+              bankTransactions = null;
+            }
+          }
+        }
+      }
+
+      if (!bankTransactions || !Array.isArray(bankTransactions) || bankTransactions.length === 0) {
         toast.error("No bank transactions found for verification.");
         return;
       }
 
-      const response = await axios.post("/api/verify-contracts", {
+      const bankResult = toBankResult(bankTransactions);
+      if (bankResult.length === 0) {
+        toast.error("No bank transactions found for verification.");
+        return;
+      }
+
+      const payload = {
         contract_result: contractResult,
         bank_result: bankResult,
-      });
+      };
+
+      try {
+        const payloadKey = `contract_verification_payload_${recordId}`;
+        sessionStorage.setItem(payloadKey, JSON.stringify(payload));
+      } catch {}
+
+      const response = await axios.post("/api/verify-contracts", payload);
       const resData = response.data;
       setVerificationResult(resData);
       try {
