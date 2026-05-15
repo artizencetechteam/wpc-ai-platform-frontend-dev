@@ -2,12 +2,21 @@ import { NextResponse } from "next/server";
 
 export async function POST(req: Request) {
   try {
-    const formData = await req.formData();
+    const body = await req.json();
+    const pdfUrl = body?.pdf_url;
+
+    if (!pdfUrl || typeof pdfUrl !== "string") {
+      return NextResponse.json(
+        { error: "Missing or invalid pdf_url" },
+        { status: 400 }
+      );
+    }
 
     // Forward to the external API
-    const response = await fetch("https://wpc-ai-agents-1.onrender.com/contract_upload", {
+    const response = await fetch("https://wpc-ai-agents-1.onrender.com/contract_url", {
       method: "POST",
-      body: formData,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pdf_url: pdfUrl }),
     });
 
     if (!response.ok) {

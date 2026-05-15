@@ -44,6 +44,7 @@ interface RadioRowProps {
 interface AddContractFormProps {
   onAdd: (contract: Contract) => void;
   onCancel: () => void;
+  onParseDocument?: (documentUrl: string) => Promise<void>;
 }
 
 // ─── Session helpers ──────────────────────────────────────────────────────────
@@ -137,7 +138,7 @@ function TopNav({ onBack }: { onBack: () => void }) {
 
 // ─── AddContractForm ──────────────────────────────────────────────────────────
 
-function AddContractForm({ onAdd, onCancel }: AddContractFormProps): React.JSX.Element {
+function AddContractForm({ onAdd, onCancel, onParseDocument }: AddContractFormProps): React.JSX.Element {
   const [clientName, setClientName] = useState<string>("");
   const [exists, setExists] = useState<string | null>(null);
   const [aligns, setAligns] = useState<string | null>(null);
@@ -181,6 +182,10 @@ function AddContractForm({ onAdd, onCancel }: AddContractFormProps): React.JSX.E
       } finally {
         toast.dismiss(loadingToast);
       }
+    }
+
+    if (documentUrl && documentUrl.startsWith("http") && onParseDocument) {
+      await onParseDocument(documentUrl);
     }
 
     onAdd({
@@ -321,8 +326,10 @@ function ContractsPageImpl(): React.JSX.Element {
   const [businessNature, setBusinessNature] = useState<string>("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isParsing, setIsParsing] = useState(false);
+  const [isVerifying, setIsVerifying] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [extractionData, setExtractionData] = useState<any>(null);
+  const [verificationResult, setVerificationResult] = useState<any>(null);
 
   useEffect(() => {
     const queryId = searchParams.get("recordId") || searchParams.get("id");
@@ -337,6 +344,11 @@ function ContractsPageImpl(): React.JSX.Element {
         if (saved.business_nature) setBusinessNature(saved.business_nature);
         if (saved.contracts && Array.isArray(saved.contracts)) setContracts(saved.contracts);
         if (saved.contract_extraction_data) setExtractionData(saved.contract_extraction_data);
+        try {
+          const vKey = `contract_verification_${parsedId}`;
+          const stored = sessionStorage.getItem(vKey);
+          if (stored) setVerificationResult(JSON.parse(stored));
+        } catch {}
       })();
     }
   }, [searchParams]);
@@ -359,13 +371,18 @@ function ContractsPageImpl(): React.JSX.Element {
         headers: { "Content-Type": file.type },
       });
 
-      // 2. Extract data
-      const formData = new FormData();
-      formData.append("file", file);
-      const response = await axios.post("/api/extract-contract", formData);
+      // 2. Extract data (send URL to extraction service)
+      const encodedPdfUrl = encodeURI(publicUrl);
+      const response = await axios.post("/api/extract-contract", {
+        pdf_url: encodedPdfUrl,
+      });
       const resData = response.data;
       
       setExtractionData(resData);
+      try {
+        const storageKey = recordId ? `contract_extraction_${recordId}` : "contract_extraction";
+        sessionStorage.setItem(storageKey, JSON.stringify(resData));
+      } catch {}
 
       if (resData.contracts && Array.isArray(resData.contracts)) {
         const clientParty = resData.parties?.find((p: any) => p.role === "Client");
@@ -383,6 +400,10 @@ function ContractsPageImpl(): React.JSX.Element {
         }));
 
         setContracts((prev) => [...prev, ...newContracts]);
+        try {
+          const storageKey = recordId ? `contract_list_${recordId}` : "contract_list";
+          sessionStorage.setItem(storageKey, JSON.stringify([...contracts, ...newContracts]));
+        } catch {}
         toast.success(`Successfully extracted ${newContracts.length} contracts.`);
       } else {
         toast.error("No contracts found in the document.");
@@ -394,6 +415,72 @@ function ContractsPageImpl(): React.JSX.Element {
       setIsParsing(false);
       toast.dismiss(loadingToast);
       if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  };
+
+  const parseContractDocument = async (documentUrl: string): Promise<void> => {
+    const loadingToast = toast.loading("Parsing contract document...");
+    try {
+      const encodedPdfUrl = encodeURI(documentUrl);
+      const response = await axios.post("/api/extract-contract", {
+        pdf_url: encodedPdfUrl,
+      });
+      const resData = response.data;
+      setExtractionData(resData);
+      try {
+        const storageKey = recordId ? `contract_extraction_${recordId}` : "contract_extraction";
+        sessionStorage.setItem(storageKey, JSON.stringify(resData));
+      } catch {}
+      toast.success("Contract parsed successfully.");
+    } catch (error) {
+      console.error("Manual contract parse error:", error);
+      toast.error("Failed to parse contract document.");
+    } finally {
+      toast.dismiss(loadingToast);
+    }
+  };
+
+  const handleVerifyContracts = async (): Promise<void> => {
+    if (!recordId) return;
+    setIsVerifying(true);
+    const loadingToast = toast.loading("Verifying contracts...");
+    try {
+      let contractResult = extractionData;
+      if (!contractResult) {
+        const storageKey = `contract_extraction_${recordId}`;
+        const stored = sessionStorage.getItem(storageKey);
+        contractResult = stored ? JSON.parse(stored) : null;
+      }
+      if (!contractResult) {
+        toast.error("No contract extraction data found.");
+        return;
+      }
+
+      const bankKey = `bank_transactions_${recordId}`;
+      const bankStored = sessionStorage.getItem(bankKey);
+      const bankResult = bankStored ? JSON.parse(bankStored) : null;
+      if (!bankResult || !Array.isArray(bankResult) || bankResult.length === 0) {
+        toast.error("No bank transactions found for verification.");
+        return;
+      }
+
+      const response = await axios.post("/api/verify-contracts", {
+        contract_result: contractResult,
+        bank_result: bankResult,
+      });
+      const resData = response.data;
+      setVerificationResult(resData);
+      try {
+        const vKey = `contract_verification_${recordId}`;
+        sessionStorage.setItem(vKey, JSON.stringify(resData));
+      } catch {}
+      toast.success("Contracts verified successfully.");
+    } catch (error: any) {
+      console.error("Contract verification error:", error);
+      toast.error(error?.response?.data?.details || "Failed to verify contracts.");
+    } finally {
+      setIsVerifying(false);
+      toast.dismiss(loadingToast);
     }
   };
 
@@ -543,7 +630,11 @@ function ContractsPageImpl(): React.JSX.Element {
 
             {/* Add form or add button */}
             {showForm ? (
-              <AddContractForm onAdd={handleAddContract} onCancel={() => setShowForm(false)} />
+              <AddContractForm
+                onAdd={handleAddContract}
+                onCancel={() => setShowForm(false)}
+                onParseDocument={parseContractDocument}
+              />
             ) : (
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px", marginBottom: "14px" }}>
                 <button
@@ -579,6 +670,61 @@ function ContractsPageImpl(): React.JSX.Element {
                   onChange={handleContractUpload}
                   style={{ display: "none" }}
                 />
+              </div>
+            )}
+
+            <div style={{ marginBottom: "16px", display: "flex", gap: "10px", flexWrap: "wrap" }}>
+              <button
+                onClick={handleVerifyContracts}
+                disabled={isVerifying}
+                style={{
+                  padding: "12px 16px",
+                  backgroundColor: isVerifying ? "#93ABDE" : "#0852C9",
+                  color: "white",
+                  border: "none",
+                  borderRadius: "8px",
+                  fontSize: "13.5px",
+                  fontWeight: "600",
+                  cursor: isVerifying ? "not-allowed" : "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "8px",
+                }}
+              >
+                {isVerifying && <SpinnerIcon color="#fff" />}
+                {isVerifying ? "Verifying..." : "Verify Contracts"}
+              </button>
+            </div>
+
+            {verificationResult && (
+              <div style={{ backgroundColor: "white", borderRadius: "10px", border: "1px solid #E2E8F0", padding: "16px 20px", marginBottom: "14px" }}>
+                <div style={{ fontSize: "14px", fontWeight: "700", color: "#0F172A", marginBottom: "8px" }}>
+                  Verification Summary
+                </div>
+                <div style={{ fontSize: "13px", color: "#64748B", marginBottom: "10px" }}>
+                  Total Verified: {verificationResult.total_verified ?? 0}
+                </div>
+                {Array.isArray(verificationResult.verification_summary) && verificationResult.verification_summary.length > 0 ? (
+                  <div style={{ display: "grid", gap: "10px" }}>
+                    {verificationResult.verification_summary.map((v: any, idx: number) => (
+                      <div key={idx} style={{ border: "1px solid #F1F5F9", borderRadius: "8px", padding: "10px 12px" }}>
+                        <div style={{ fontSize: "13px", fontWeight: "600", color: "#0F172A" }}>
+                          Contract: {v.contract || "—"}
+                        </div>
+                        <div style={{ fontSize: "12.5px", color: v.status === "Verified" ? "#166534" : "#DC2626" }}>
+                          Status: {v.status || "—"}
+                        </div>
+                        {v.match_details && (
+                          <div style={{ fontSize: "12.5px", color: "#475569", marginTop: "4px" }}>
+                            Match: {v.match_details.description || "—"} • {v.match_details.date || "—"} • {v.match_details.amount || "—"}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div style={{ fontSize: "12.5px", color: "#94A3B8" }}>No verification results yet.</div>
+                )}
               </div>
             )}
           </>

@@ -136,12 +136,12 @@ function RTWVerificationScreen({ migrants, recordId, onBackToBank, onContinue, o
   const [currentIndex, setCurrentIndex] = useState(0);
   const employee = migrants[currentIndex];
   const hasDocument = !!(employee?.documentType || employee?.documentNumber);
-  const formattedStart = employee?.startDate ? formatDate(employee.startDate) : null;
 
   const [isExtracting, setIsExtracting] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [extractedData, setExtractedData] = useState<any>(null);
   const [manualName, setManualName] = useState("");
+  const [startDate, setStartDate] = useState("");
   const [checkDate, setCheckDate] = useState("");
   const [companyName, setCompanyName] = useState("");
   const [rtwDocumentUrl, setRtwDocumentUrl] = useState<string | null>(employee?.rtw_document_url || null);
@@ -155,11 +155,11 @@ function RTWVerificationScreen({ migrants, recordId, onBackToBank, onContinue, o
 
   // ── RTW Compliance: check date must be BEFORE employment start date ──────────
   const getRTWComplianceStatus = () => {
-    if (!checkDate || !employee?.startDate) return 'pending';
+    if (!checkDate || !startDate) return 'pending';
 
     // Normalize to YYYY-MM-DD for reliable comparison regardless of time/timezone
     const checkStr = checkDate.split('T')[0];
-    const startStr = employee.startDate.split('T')[0];
+    const startStr = startDate.split('T')[0];
 
     if (!checkStr || !startStr) return 'pending';
     return checkStr < startStr ? 'compliant' : 'non-compliant';
@@ -170,6 +170,7 @@ function RTWVerificationScreen({ migrants, recordId, onBackToBank, onContinue, o
   useEffect(() => {
     if (employee) {
       setCheckDate(toISODate(extractedData?.check_date || employee.check_date) || "");
+      setStartDate(toISODate(employee.startDate) || "");
       const rawCompany = extractedData?.company_name || employee.company_name || "";
       setCompanyName(rawCompany.replace(/\s+/g, " ").trim());
       setRtwDocumentUrl(employee.rtw_document_url || null);
@@ -250,6 +251,7 @@ function RTWVerificationScreen({ migrants, recordId, onBackToBank, onContinue, o
     try {
       await onSaveEmployee(employee.id, {
         employee_full_name: manualName,
+        employment_start_date: startDate,
         check_date: checkDate, // Already in YYYY-MM-DD format from setCheckDate
         company_name: companyName,
         passport_number: manualRefNumber,
@@ -364,7 +366,7 @@ function RTWVerificationScreen({ migrants, recordId, onBackToBank, onContinue, o
         <div style={{ flex: 1 }}>
           <div style={{ fontSize: "17px", fontWeight: "700", color: "#0F172A" }}>{employee?.employee_full_name}</div>
           <div style={{ fontSize: "13px", color: "#64748B", marginTop: "4px" }}>
-            Migrant Worker{formattedStart ? ` • Employment Start: ${formattedStart}` : ""}
+            Migrant Worker{startDate ? ` • Employment Start: ${formatDate(startDate)}` : ""}
           </div>
         </div>
 
@@ -513,6 +515,26 @@ function RTWVerificationScreen({ migrants, recordId, onBackToBank, onContinue, o
                 )}
               </div>
 
+              {/* Employment Start Date */}
+              <div>
+                <div style={{ fontSize: "11px", color: "#6B7280", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: "4px" }}>Employment Start Date</div>
+                {isEditing ? (
+                  <input
+                    type="date"
+                    value={startDate ? startDate.split('T')[0] : ""}
+                    onChange={(e) => setStartDate(toISODate(e.target.value) || "")}
+                    style={{
+                      width: "100%", padding: "8px 10px", borderRadius: "6px",
+                      border: "1px solid #CBD5E1", fontSize: "13px", outline: "none"
+                    }}
+                  />
+                ) : (
+                  <div style={{ fontSize: "14px", fontWeight: "600", color: "#0F172A" }}>
+                    {startDate ? formatDate(startDate) : "N/A"}
+                  </div>
+                )}
+              </div>
+
               {/* Check Date */}
               <div>
                 <div style={{ fontSize: "11px", color: "#6B7280", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: "4px" }}>Check Date</div>
@@ -624,7 +646,7 @@ function RTWVerificationScreen({ migrants, recordId, onBackToBank, onContinue, o
                 <div style={{ flex: 1 }}>
                   <div style={{ fontSize: "13px", fontWeight: "700", color: "#DC2626", marginBottom: "3px" }}>Compliance Violation Detected</div>
                   <div style={{ fontSize: "12.5px", color: "#B91C1C", lineHeight: "1.55", marginBottom: "12px" }}>
-                    RTW check was conducted on <strong>{formatDate(checkDate)}</strong>, which is on or after the employment start date (<strong>{formattedStart}</strong>).
+                    RTW check was conducted on <strong>{formatDate(checkDate)}</strong>, which is on or after the employment start date (<strong>{startDate ? formatDate(startDate) : "N/A"}</strong>).
                     The Right to Work check must be completed <em>before</em> employment begins.
                   </div>
                   {verificationResult && (
@@ -834,7 +856,11 @@ function RTWComplianceImpl() {
 
       if (res.success) {
         // Update local state so it persists if we go back/forward
-        setEmployees(prev => prev.map(emp => emp.id === empId ? { ...emp, ...data } : emp));
+        setEmployees(prev => prev.map(emp => {
+          if (emp.id !== empId) return emp;
+          const nextStartDate = data.employment_start_date ?? emp.startDate;
+          return { ...emp, ...data, startDate: nextStartDate };
+        }));
       } else {
         toast.error(`Failed to save: ${res.message}`);
       }
