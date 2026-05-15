@@ -5,7 +5,7 @@ export async function POST(req: Request) {
     const body = await req.json();
 
     // Forward to the external API
-    const response = await fetch("https://wpc-ai-agents-1.onrender.com/verify-contracts", {
+    const response = await fetch("http://37.27.113.235:8365/verify-contracts", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
