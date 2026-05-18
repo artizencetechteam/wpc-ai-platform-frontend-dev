@@ -41,6 +41,11 @@ export default function CompanyPage() {
 function CompanyPageImpl() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const shouldLog = process.env.ENVIORNMENT !== "PROD";
+  const logSave = (step: string, payload?: any, response?: any) => {
+    if (!shouldLog) return;
+    console.log(`[company] ${step}`, { payload, response });
+  };
 
   const [hrRecordId, setHrRecordId] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
@@ -102,6 +107,7 @@ function CompanyPageImpl() {
         }
 
         const createRes = await createHRValidationRecordAction(userId, token);
+        logSave("create-hr-record", { userId }, createRes);
         if (!createRes.success) {
           setApiError(createRes.message);
           setLoading(false);
@@ -129,6 +135,7 @@ function CompanyPageImpl() {
         } catch { /* ignore */ }
         if (userId) {
           const createRes = await createHRValidationRecordAction(userId, token);
+          logSave("create-hr-record-fallback", { userId }, createRes);
           if (createRes.success) recordId = createRes.data?.id ?? null;
         }
       }
@@ -168,9 +175,11 @@ function CompanyPageImpl() {
 
       // Save to server
       const token = getClientToken();
-      await updateHRValidationRecordAction(hrRecordId, {
+      const payload = {
         company_name: companyName.trim(),
-      }, token);
+      };
+      const res = await updateHRValidationRecordAction(hrRecordId, payload, token);
+      logSave("update-hr-record", payload, res);
 
       // Mark company step as complete in progress map
       const pStr = sessionStorage.getItem(`hr_progress_${hrRecordId}`);

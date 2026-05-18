@@ -81,6 +81,16 @@ function BankStatementImpl() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
+  const shouldLog = process.env.ENVIORNMENT !== "PROD";
+  const logStep = (step: string, detail?: any) => {
+    if (!shouldLog) return;
+    if (detail !== undefined) {
+      console.log(`[bank-statement] ${step}`, detail);
+    } else {
+      console.log(`[bank-statement] ${step}`);
+    }
+  };
+
   const [hrRecordId, setHrRecordId] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [apiError, setApiError] = useState("");
@@ -116,14 +126,18 @@ function BankStatementImpl() {
   async function initHRRecord() {
     setLoading(true);
     setApiError("");
+    logStep("init:start");
     try {
       const token = getClientToken();
       const queryId = searchParams.get("recordId") || searchParams.get("id");
+      logStep("init:query", { queryId });
       
       const listRes = await listHRValidationRecordsAction(token);
+      logStep("init:list-records", { success: listRes.success, count: listRes.data?.length ?? 0 });
       if (!listRes.success) {
         setApiError(listRes.message);
         setLoading(false);
+        logStep("init:failed", { message: listRes.message });
         return;
       }
 
@@ -134,16 +148,20 @@ function BankStatementImpl() {
         recordId = sorted[0].id;
       }
 
+      logStep("init:resolved-record", { recordId });
+
       setHrRecordId(recordId);
       if (recordId !== null) {
         // Fetch employees to pass their names to the AI parser
         const empRes = await listEmployeesAction(recordId, token);
+        logStep("init:list-employees", { success: empRes.success, count: empRes.data?.length ?? 0 });
         if (empRes.success) {
           setEmployees(empRes.data || []);
         }
 
         const record = records.find((r) => r.id === recordId);
         if (record) {
+          logStep("init:apply-record", { hasBankName: !!record.bank_name, hasStatementUrl: !!record.bank_statement_url });
           if (record.bank_name) setBankName(record.bank_name);
           if (record.bank_statement_url) setBankStatementUrl(record.bank_statement_url);
           if (record.transactions) {
@@ -165,8 +183,10 @@ function BankStatementImpl() {
     } catch (e) {
       console.error("initHRRecord error:", e);
       setApiError("Unexpected error initialising HR record.");
+      logStep("init:error", e);
     } finally {
       setLoading(false);
+      logStep("init:done");
     }
   }
 
@@ -175,6 +195,7 @@ function BankStatementImpl() {
     const file = e.target.files?.[0];
     if (!file) return;
 
+    logStep("upload:start", { name: file.name, type: file.type, size: file.size });
     setIsUploading(true);
     const loadingToast = toast.loading("Uploading to secure storage...");
     try {
@@ -184,11 +205,13 @@ function BankStatementImpl() {
         fileType: file.type || "application/pdf",
       });
       const { presignedUrl, publicUrl } = presignRes.data;
+      logStep("upload:presign", { hasPresignedUrl: !!presignedUrl, publicUrl });
 
       // 1b. PUT directly to Cloudflare R2
       await axios.put(presignedUrl, file, {
         headers: { "Content-Type": file.type || "application/pdf" },
       });
+      logStep("upload:stored", { publicUrl });
 
       setUploadedFileName(file.name);
       setBankStatementUrl(publicUrl);
@@ -202,9 +225,9 @@ function BankStatementImpl() {
       // 1c. Immediately persist the URL to the database
       if (hrRecordId) {
         const token = getClientToken();
-        await updateHRValidationRecordAction(hrRecordId, {
-          bank_statement_url: publicUrl,
-        }, token);
+        const payload = { bank_statement_url: publicUrl };
+        const res = await updateHRValidationRecordAction(hrRecordId, payload, token);
+        logStep("upload:db-update", { payload, response: res });
       }
 
       toast.success("File uploaded successfully! Starting AI Analysis...");
@@ -212,14 +235,17 @@ function BankStatementImpl() {
       toast.dismiss(loadingToast);
 
       // 1d. Automatically trigger AI analysis
+      logStep("analysis:trigger", { url: publicUrl });
       await handleRunAnalysis(publicUrl);
     } catch (error: any) {
       console.error("Upload error:", error);
+      logStep("upload:error", error);
       toast.error(error.response?.data?.error || "Failed to upload file.");
       setIsUploading(false);
       toast.dismiss(loadingToast);
     } finally {
       if (fileInputRef.current) fileInputRef.current.value = "";
+      logStep("upload:done");
     }
   };
 
@@ -228,14 +254,17 @@ function BankStatementImpl() {
     const urlToUse = urlOverride || bankStatementUrl;
     if (!urlToUse) return;
 
+    logStep("analysis:start", { url: urlToUse, bank_name: bankName });
     setIsAnalysing(true);
     const loadingToast = toast.loading("Running AI analysis...");
     try {
       const response = await axios.post("/api/parse-bank-statement", {
         file_url: urlToUse,
         employee_name: employees.map((e) => e.employee_full_name),
+        bank_name: bankName,
       });
       const resData = response.data;
+      logStep("analysis:response", { status: resData?.status });
 
       if (resData.status !== "success") {
         toast.error(resData.message || "Failed to parse bank statement");
@@ -244,12 +273,15 @@ function BankStatementImpl() {
 
       const bankStatement = resData.bank_statement || {};
       const fetchedTransactions = bankStatement.all_transactions || [];
+      logStep("analysis:transactions", { count: fetchedTransactions.length });
 
       if (hrRecordId) {
         try {
           sessionStorage.setItem(`bank_transactions_${hrRecordId}`, JSON.stringify(fetchedTransactions));
+          logStep("analysis:session-storage", { key: `bank_transactions_${hrRecordId}` });
         } catch (e) {
           console.warn("Failed to save to session storage", e);
+          logStep("analysis:session-storage-error", e);
         }
       }
 
@@ -276,6 +308,7 @@ function BankStatementImpl() {
       setPaymentIncomingTotal(stats.total_incoming ?? null);
       setPaymentOutgoingTotal(stats.total_outgoing ?? null);
       setMonthlySummary(stats.monthly_summary ?? null);
+      logStep("analysis:stats", { hasMonthlySummary: !!stats.monthly_summary });
 
       if (mapped.length === 0) {
         toast.success("AI analysis complete — no transactions found.");
@@ -285,10 +318,12 @@ function BankStatementImpl() {
       }
     } catch (error: any) {
       console.error("AI analysis error:", error);
+      logStep("analysis:error", error);
       toast.error(error.response?.data?.details || "AI analysis failed. Please try again.");
     } finally {
       setIsAnalysing(false);
       toast.dismiss(loadingToast);
+      logStep("analysis:done");
     }
   };
 
@@ -326,7 +361,8 @@ function BankStatementImpl() {
     setIsSubmitting(true);
     if (hrRecordId) {
       const token = getClientToken();
-      await updateHRValidationRecordAction(hrRecordId, {
+      logStep("continue:start", { hrRecordId, bank_name: bankName });
+      const payload = {
         bank_name: bankName,
         transactions: transactions,
         Opening_Balance: manualOpening,
@@ -335,13 +371,17 @@ function BankStatementImpl() {
         payment_incoming_total: paymentIncomingTotal,
         payment_outgoing_total: paymentOutgoingTotal,
         monthly_summary: monthlySummary,
-      }, token);
+      };
+      const res = await updateHRValidationRecordAction(hrRecordId, payload, token);
+      logStep("continue:db-update", { payload, response: res });
 
       const pStr = sessionStorage.getItem(`hr_progress_${hrRecordId}`);
       const p = pStr ? JSON.parse(pStr) : {};
       p.bank = true;
       sessionStorage.setItem(`hr_progress_${hrRecordId}`, JSON.stringify(p));
+      logStep("continue:progress", { key: `hr_progress_${hrRecordId}` });
       router.push(`/employer/sections/rtw-compliance?recordId=${hrRecordId}`);
+      logStep("continue:navigate", { to: "/employer/sections/rtw-compliance" });
     }
   };
 
@@ -378,18 +418,23 @@ function BankStatementImpl() {
               <label style={{ display: "block", fontSize: "14px", fontWeight: "600", color: "#374151", marginBottom: "8px" }}>
                 Bank Name *
               </label>
-              <input
-                type="text"
+              <select
+                className="capitalize"
                 value={bankName}
                 onChange={(e) => setBankName(e.target.value)}
-                placeholder="Enter Bank Name"
                 style={{
                   width: "100%", padding: "12px 16px", borderRadius: "10px",
                   border: "1.5px solid #D1D5DB", fontSize: "15px", outline: "none",
                   boxSizing: "border-box", color: "#0F172A", backgroundColor: "white",
                   transition: "border-color 0.2s"
                 }}
-              />
+              >
+                <option value="zempler">zempler</option>
+                <option value="coutts">coutts</option>
+                <option value="monzo">monzo</option>
+                <option value="natwest loan ( over draft )">natwest loan ( over draft )</option>
+                <option value="Other Banks">Other Banks</option>
+              </select>
             </div>
 
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px", marginBottom: "24px" }}>

@@ -179,6 +179,11 @@ function SummaryPageImpl(): React.JSX.Element {
   const [badgeDropdown, setBadgeDropdown] = useState<{ target: HTMLElement, x: number, y: number } | null>(null);
   const printContainerRef = useRef<HTMLDivElement>(null);
   const signatureCommittedRef = useRef(false);
+  const shouldLog = process.env.ENVIORNMENT !== "PROD";
+  const logSave = (step: string, payload?: any, response?: any) => {
+    if (!shouldLog) return;
+    console.log(`[summary] ${step}`, { payload, response });
+  };
 
   useEffect(() => {
     signatureCommittedRef.current = false;
@@ -202,16 +207,19 @@ function SummaryPageImpl(): React.JSX.Element {
 
     try {
       const token = getClientToken();
-      await updateHRValidationRecordAction(Number(recordId), {
+      const payload = {
         html_content_for_summary: null,
         result_complete_sections: {
           ...resultSections,
           summary_source_sig: null,
         },
-      }, token);
+      };
+      const res = await updateHRValidationRecordAction(Number(recordId), payload, token);
+      logSave("clear-summary-html", payload, res);
       setResultSections((prev) => ({ ...prev, summary_source_sig: null }));
     } catch (err) {
       console.error("Error clearing summary HTML:", err);
+      logSave("clear-summary-html:error", { recordId }, err);
     }
   };
 
@@ -392,15 +400,18 @@ function SummaryPageImpl(): React.JSX.Element {
         if (res.success && res.data) {
           const record = res.data.find((r: any) => r.id === Number(recordId));
           const currentSections = record?.result_complete_sections || {};
-          await updateHRValidationRecordAction(Number(recordId), {
+          const payload = {
             result_complete_sections: {
               ...currentSections,
               manual_overrides: newOverrides
             }
-          }, token);
+          };
+          const updateRes = await updateHRValidationRecordAction(Number(recordId), payload, token);
+          logSave("update-manual-overrides", payload, updateRes);
         }
       } catch (err) {
         console.error("Error toggling manual override:", err);
+        logSave("update-manual-overrides:error", { recordId, key }, err);
       }
     }
   };
@@ -700,12 +711,14 @@ function SummaryPageImpl(): React.JSX.Element {
         };
       }
 
-      await updateHRValidationRecordAction(Number(recordId), payload, token);
+      const res = await updateHRValidationRecordAction(Number(recordId), payload, token);
+      logSave("save-summary-html", payload, res);
       if (signature) {
         setResultSections((prev) => ({ ...prev, summary_source_sig: signature }));
       }
     } catch (err) {
       console.error("Error saving summary HTML:", err);
+      logSave("save-summary-html:error", { recordId }, err);
     }
   };
 
@@ -1166,7 +1179,8 @@ function SummaryPageImpl(): React.JSX.Element {
 
                   if (recordId) {
                     const token = getClientToken();
-                    await updateHRValidationRecordAction(Number(recordId), updateData, token);
+                    const res = await updateHRValidationRecordAction(Number(recordId), updateData, token);
+                    logSave("submit-feedback", updateData, res);
                   }
                 }}
                 style={{

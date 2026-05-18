@@ -637,10 +637,16 @@ function ContractsPageImpl(): React.JSX.Element {
     setIsSubmitting(true);
     markComplete(recordId, "contracts");
 
+    const shouldLog = process.env.ENVIORNMENT !== "PROD";
+    const logSave = (step: string, payload?: any, response?: any) => {
+      if (!shouldLog) return;
+      console.log(`[contracts] ${step}`, { payload, response });
+    };
+
     if (recordId) {
       const token = getClientToken();
       try {
-        await updateHRValidationRecordAction(recordId, {
+        const hrPayload = {
           result_complete_sections: {
             ...(await getSavedResults(recordId)),
             business_nature: businessNature,
@@ -648,10 +654,13 @@ function ContractsPageImpl(): React.JSX.Element {
             contracts: contracts,
             contract_extraction_data: extractionData,
           }
-        }, token);
+        };
+        const hrRes = await updateHRValidationRecordAction(recordId, hrPayload, token);
+        logSave("update-hr-record", hrPayload, hrRes);
         router.push(`/employer/sections/financial?recordId=${recordId}`);
       } catch (err) {
         console.error("Error completing contracts validation:", err);
+        logSave("complete:error", { recordId }, err);
         setIsSubmitting(false);
       }
     } else {

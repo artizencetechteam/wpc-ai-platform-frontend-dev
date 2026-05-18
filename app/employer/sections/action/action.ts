@@ -310,6 +310,9 @@ export async function getHRValidationRecordAction(
       clientToken,
     );
     const data = await res.json();
+    if (process.env.ENVIORNMENT !== 'PROD') {
+      console.log('[getHRValidationRecordAction] record', JSON.stringify(data, null, 2));
+    }
     if (!res.ok) return { success: false, message: errMsg(data) };
     return { success: true, message: 'OK', data };
   } catch (e) {

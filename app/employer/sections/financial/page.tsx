@@ -1279,6 +1279,11 @@ function FinancialPageImpl(): React.JSX.Element {
 
   const stepIds = ["balance", "cashflow", "investments", "contracts"];
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const shouldLog = process.env.ENVIORNMENT !== "PROD";
+  const logSave = (step: string, payload?: any, response?: any) => {
+    if (!shouldLog) return;
+    console.log(`[financial] ${step}`, { payload, response });
+  };
 
   const goToStep = (id: string): void => setStep(id);
 
@@ -1313,7 +1318,7 @@ function FinancialPageImpl(): React.JSX.Element {
         const finalBalance = financialData.balance ?? financialData.Closing_Balance;
 
         // Save global transactions in HR Validation Record
-        await updateHRValidationRecordAction(recordId, {
+        const hrPayload = {
           transactions: financialData.transactions,
           Opening_Balance: financialData.Opening_Balance,
           Closing_Balance: finalBalance,
@@ -1325,7 +1330,9 @@ function FinancialPageImpl(): React.JSX.Element {
             ...currentSaved,
             contract_verification_results: financialData.contract_verification_results,
           }
-        }, token);
+        };
+        const hrRes = await updateHRValidationRecordAction(recordId, hrPayload, token);
+        logSave("update-hr-record", hrPayload, hrRes);
 
         // Prepare payload for Financial Record
         const payload = {
@@ -1341,9 +1348,11 @@ function FinancialPageImpl(): React.JSX.Element {
 
         // Create or update Financial Record
         if (financialRecordId) {
-          await updateFinancialRecordAction(financialRecordId, payload, token);
+          const res = await updateFinancialRecordAction(financialRecordId, payload, token);
+          logSave("update-financial-record", payload, res);
         } else {
           const res = await createFinancialRecordAction(payload, token);
+          logSave("create-financial-record", payload, res);
           if (res.success && res.data) {
             setFinancialRecordId(res.data.id);
           }
@@ -1351,6 +1360,7 @@ function FinancialPageImpl(): React.JSX.Element {
         router.push(`/employer/sections/summary?recordId=${recordId}`);
       } catch (err) {
         console.error("Error completing financial check:", err);
+        logSave("complete:error", { recordId }, err);
         setIsSubmitting(false);
       }
     } else {
