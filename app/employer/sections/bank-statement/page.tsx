@@ -42,6 +42,20 @@ function formatDate(raw: string | null | undefined): string {
   return `${dd.padStart(2, "0")}-${mm}-${year}`;
 }
 
+function formatDateFlexible(raw: string | null | undefined): string {
+  if (!raw) return "";
+  if (raw.includes("/")) {
+    const [dd, mm, yyyy] = raw.split("/").map((p) => p.trim());
+    if (dd && mm && yyyy) {
+      const yearNum = yyyy.length === 2 ? 2000 + parseInt(yyyy, 10) : parseInt(yyyy, 10);
+      if (!Number.isNaN(yearNum)) {
+        return `${dd.padStart(2, "0")}-${mm.padStart(2, "0")}-${yearNum}`;
+      }
+    }
+  }
+  return formatDate(raw);
+}
+
 const inputStyle: React.CSSProperties = { width: "100%", padding: "10px 12px", borderRadius: "8px", border: "1.5px solid #0852C9", fontSize: "14px", outline: "none", boxSizing: "border-box", color: "#0F172A", backgroundColor: "white" };
 const iconBtn: React.CSSProperties = { display: "flex", alignItems: "center", justifyContent: "center", padding: "6px", backgroundColor: "transparent", border: "none", cursor: "pointer", color: "#64748B", transition: "color 0.2s" };
 
@@ -272,7 +286,7 @@ function BankStatementImpl() {
       }
 
       const bankStatement = resData.bank_statement || {};
-      const fetchedTransactions = bankStatement.all_transactions || [];
+      const fetchedTransactions = bankStatement.all_transactions || bankStatement.transactions || [];
       logStep("analysis:transactions", { count: fetchedTransactions.length });
 
       if (hrRecordId) {
@@ -286,13 +300,13 @@ function BankStatementImpl() {
       }
 
       const mapped = fetchedTransactions.map((t: any, idx: number) => {
-        const amt = t.paid_out || t.paid_in || t.amount || t.value || 0;
+        const amt = t.paid_out ?? t.paid_in ?? t.amount ?? t.value ?? t.balance ?? 0;
         return {
           id: Date.now() + idx,
-          date: t.date || formatDate(t.parsed_date),
+          date: formatDateFlexible(t.date) || formatDate(t.parsed_date),
           amount: Math.abs(amt),
           reference: t.description || t.reference || "Unknown",
-          type: t.paid_in ? "incoming" : "outgoing",
+          type: t.paid_in ? "incoming" : t.paid_out ? "outgoing" : "incoming",
           status: getTransactionStatus(t.description || ""),
           flags: t.flags || {}
         };
