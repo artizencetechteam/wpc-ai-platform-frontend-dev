@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const { file_url, employee_name } = body;
+    const { file_url, employee_name , bank_name } = body;
 
     if (!file_url) {
       return NextResponse.json(
@@ -18,7 +18,8 @@ export async function POST(req: Request) {
       body: JSON.stringify({
         file_url,
         employee_name: employee_name ?? [],
-      }),
+        bank_name: bank_name ?? "Other bank",
+      })
     });
 
     if (!response.ok) {
