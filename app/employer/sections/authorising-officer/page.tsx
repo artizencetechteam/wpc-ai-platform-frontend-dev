@@ -530,32 +530,43 @@ function AuthorisingOfficerImpl(): React.JSX.Element {
     setIsSubmitting(true);
     markComplete(recordId, "auth");
 
+    const shouldLog = process.env.ENVIORNMENT !== "PROD";
+    const logSave = (step: string, payload?: any, response?: any) => {
+      if (!shouldLog) return;
+      console.log(`[authorising-officer] ${step}`, { payload, response });
+    };
+
     if (recordId) {
       const token = getClientToken();
       
       try {
         // 1. Save record status
-        await updateHRValidationRecordAction(recordId, {
+        const hrPayload = {
           result_complete_sections: {
             ...(await getSavedResults(recordId)),
             ao_status: aoStatus,
             ao_mode: mode,
           }
-        }, token);
+        };
+        const hrRes = await updateHRValidationRecordAction(recordId, hrPayload, token);
+        logSave("update-hr-record", hrPayload, hrRes);
 
         // 2. Save employee AO data if applicable
         if (aoData && aoData.id) {
-          await updateEmployeeAction(Number(aoData.id), {
+          const empPayload = {
             role_in_company: aoData.role,
             AO_Credentials_senior_most_employee: !!aoData.creds?.seniorMost,
             AO_Credentials_company_director: !!aoData.creds?.director,
             AO_Credentials_on_payroll: !!aoData.creds?.onPayroll,
             AO_Credentials_holds_shared: !!aoData.creds?.holdsShares,
-          }, token);
+          };
+          const empRes = await updateEmployeeAction(Number(aoData.id), empPayload, token);
+          logSave("update-employee", { id: aoData.id, ...empPayload }, empRes);
         }
         router.push(`/employer/sections/contracts?recordId=${recordId}`);
       } catch (err) {
         console.error("Error completing AO assessment:", err);
+        logSave("complete:error", { recordId }, err);
         setIsSubmitting(false);
       }
     } else {

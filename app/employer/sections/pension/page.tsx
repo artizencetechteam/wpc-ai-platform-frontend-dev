@@ -527,6 +527,12 @@ function PensionComplianceImpl() {
     setIsSubmitting(true);
     markComplete(recordId, "pension");
 
+    const shouldLog = process.env.ENVIORNMENT !== "PROD";
+    const logSave = (step: string, payload?: any, response?: any) => {
+      if (!shouldLog) return;
+      console.log(`[pension] ${step}`, { payload, response });
+    };
+
     if (recordId) {
       const token = getClientToken();
 
@@ -544,7 +550,7 @@ function PensionComplianceImpl() {
         }
 
         // 2. Save general record data
-        await updateHRValidationRecordAction(recordId, {
+        const hrPayload = {
           pension_section_comments: newComment,
           result_complete_sections: {
             ...(record?.result_complete_sections || {}),
@@ -553,23 +559,28 @@ function PensionComplianceImpl() {
               eligibilityChecks,
             }
           }
-        }, token);
+        };
+        const hrRes = await updateHRValidationRecordAction(recordId, hrPayload, token);
+        logSave("update-hr-record", hrPayload, hrRes);
 
         // 2. Save per-employee pension data
         for (const emp of employees) {
           const c = eligibilityChecks[emp.id] || {};
           
-          await updateEmployeeAction(emp.id, {
+          const empPayload = {
             min_22_year_age: !!c.age22,
             earning_gbp_10k_above: !!c.earnings10k,
             opted_out: !!c.optedOut,
             pension_status: c.autoEnrolled ? "enrolled" : "not_enrolled",
             auto_enrollment_date: c.autoEnrolled ? new Date().toISOString().split('T')[0] : null,
-          }, token);
+          };
+          const empRes = await updateEmployeeAction(emp.id, empPayload, token);
+          logSave("update-employee", { id: emp.id, ...empPayload }, empRes);
         }
         router.push(`/employer/sections/authorising-officer?recordId=${recordId}`);
       } catch (err) {
         console.error("Error completing pension validation:", err);
+        logSave("complete:error", { recordId }, err);
         setIsSubmitting(false);
       }
     } else {

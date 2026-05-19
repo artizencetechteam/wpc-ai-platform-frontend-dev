@@ -775,6 +775,11 @@ export default function RTWCompliance() {
 function RTWComplianceImpl() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const shouldLog = process.env.ENVIORNMENT !== "PROD";
+  const logSave = (step: string, payload?: any, response?: any) => {
+    if (!shouldLog) return;
+    console.log(`[rtw-compliance] ${step}`, { payload, response });
+  };
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [recordId, setRecordId] = useState<number | null>(null);
   const [loaded, setLoaded] = useState(false);
@@ -848,11 +853,11 @@ function RTWComplianceImpl() {
   };
 
   const handleSaveEmployee = async (empId: string, data: any) => {
-    console.log(`[handleSaveEmployee] Saving for ${empId}:`, data);
+    logSave("update-employee:start", { id: empId, ...data });
     try {
       const token = getClientToken();
       const res = await updateEmployeeAction(Number(empId), data, token);
-      console.log(`[handleSaveEmployee] Response:`, res);
+      logSave("update-employee:response", { id: empId, ...data }, res);
 
       if (res.success) {
         // Update local state so it persists if we go back/forward
@@ -866,6 +871,7 @@ function RTWComplianceImpl() {
       }
     } catch (err) {
       console.error("Error saving employee RTW data:", err);
+      logSave("update-employee:error", { id: empId, ...data }, err);
       toast.error("An error occurred while saving.");
     }
   };
@@ -878,15 +884,18 @@ function RTWComplianceImpl() {
       const token = getClientToken();
       try {
         const record = await getHRRecord(recordId);
-        await updateHRValidationRecordAction(recordId, {
+        const hrPayload = {
           result_complete_sections: {
             ...(record?.result_complete_sections || {}),
             has_migrants: hasMigrants,
             migrant_count: migrants.length,
           }
-        }, token);
+        };
+        const hrRes = await updateHRValidationRecordAction(recordId, hrPayload, token);
+        logSave("update-hr-record", hrPayload, hrRes);
       } catch (err) {
         console.error("Error updating RTW status:", err);
+        logSave("update-hr-record:error", { recordId }, err);
       }
     }
 

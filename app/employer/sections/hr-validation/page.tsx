@@ -281,6 +281,11 @@ export default function HRRecordsValidation() {
 function HRRecordsValidationImpl() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const shouldLog = process.env.ENVIORNMENT !== "PROD";
+  const logSave = (step: string, payload?: any, response?: any) => {
+    if (!shouldLog) return;
+    console.log(`[hr-validation] ${step}`, { payload, response });
+  };
 
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [hrRecordId, setHrRecordId] = useState<number | null>(null);
@@ -350,6 +355,7 @@ function HRRecordsValidationImpl() {
         }
 
         const createRes = await createHRValidationRecordAction(userId, token);
+        logSave("create-hr-record", { userId }, createRes);
         if (!createRes.success) {
           setApiError(createRes.message);
           setLoading(false);
@@ -383,6 +389,7 @@ function HRRecordsValidationImpl() {
 
         if (userId) {
           const createRes = await createHRValidationRecordAction(userId, token);
+          logSave("create-hr-record-fallback", { userId }, createRes);
           if (createRes.success) recordId = createRes.data?.id ?? null;
         }
       }
@@ -427,15 +434,17 @@ function HRRecordsValidationImpl() {
     if (!manualForm.name.trim() || !manualForm.startDate || hrRecordId === null) return;
     setSubmitting(true);
     setSubmitError("");
+    const payload = {
+      employee_full_name: manualForm.name,
+      employment_start_date: manualForm.startDate,
+      nationality: manualForm.nationality,
+      HRValidationRecord_id: hrRecordId,
+    };
     const res = await addEmployeeAction(
-      {
-        employee_full_name: manualForm.name,
-        employment_start_date: manualForm.startDate,
-        nationality: manualForm.nationality,
-        HRValidationRecord_id: hrRecordId,
-      },
+      payload,
       getClientToken()
     );
+    logSave("add-employee-manual", payload, res);
     if (res.success) {
       setShowModal(false);
       await loadEmployees(hrRecordId);
@@ -449,21 +458,23 @@ function HRRecordsValidationImpl() {
     if (!rtwForm.name.trim() || !rtwForm.startDate || hrRecordId === null) return;
     setSubmitting(true);
     setSubmitError("");
-    const res = await addEmployeeAction(
-      {
-        employee_full_name: rtwForm.name,
-        employment_start_date: rtwForm.startDate,
-        nationality: rtwForm.nationality || "Migrant",
-        HRValidationRecord_id: hrRecordId,
+    const payload = {
+      employee_full_name: rtwForm.name,
+      employment_start_date: rtwForm.startDate,
+      nationality: rtwForm.nationality || "Migrant",
+      HRValidationRecord_id: hrRecordId,
 
-        rtw_document_url: rtwForm.fileUrl || undefined,
-        check_date: rtwForm.check_date || null,
-        company_name: rtwForm.company_name || null,
-        passport_number: rtwForm.documentNumber || null,
-        rtw_expiry_date: rtwForm.expiryDate || null,
-      },
+      rtw_document_url: rtwForm.fileUrl || undefined,
+      check_date: rtwForm.check_date || null,
+      company_name: rtwForm.company_name || null,
+      passport_number: rtwForm.documentNumber || null,
+      rtw_expiry_date: rtwForm.expiryDate || null,
+    };
+    const res = await addEmployeeAction(
+      payload,
       getClientToken()
     );
+    logSave("add-employee-rtw", payload, res);
     if (res.success) {
       setShowModal(false);
       await loadEmployees(hrRecordId);
