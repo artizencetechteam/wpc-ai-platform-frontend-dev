@@ -508,19 +508,10 @@ function ContractsPageImpl(): React.JSX.Element {
 
   const parseContractDocument = async (documentUrl: string, opts?: { verify?: boolean }): Promise<void> => {
     if (documentUrl) setParsingDocs((prev) => Array.from(new Set([...prev, documentUrl])));
-    const loadingToast = toast.loading(opts?.verify ? "Parsing and verifying contracts..." : "Parsing contract document...");
+    const loadingToast = toast.loading("Parsing contract document...");
     try {
       const encodedPdfUrl = encodeURI(documentUrl);
       const payload: any = { pdf_url: encodedPdfUrl };
-
-      if (opts?.verify) {
-        const bankResult = await getBankResultForVerify();
-        if (!bankResult) {
-          toast.error("No bank transactions found for verification.");
-          return;
-        }
-        payload.bank_result = bankResult;
-      }
 
       const response = await axios.post("/api/extract-contract", payload);
       const resData = response.data;
@@ -533,11 +524,6 @@ function ContractsPageImpl(): React.JSX.Element {
       }
       if (normalized) appendExtraction(recordId, normalized);
 
-      const parsedContracts = normalized?.contracts && Array.isArray(normalized.contracts) ? normalized.contracts : [];
-      if (parsedContracts.length > 0) {
-        // Parsed contracts are shown only in the Parsed Contracts card (API response), not added to manual list.
-      }
-
       if (resData?.verify_result) {
         setVerificationResult(resData.verify_result);
         try {
@@ -547,7 +533,11 @@ function ContractsPageImpl(): React.JSX.Element {
       }
 
       setParsedDocs((prev) => (documentUrl ? Array.from(new Set([...prev, documentUrl])) : prev));
-      toast.success(opts?.verify ? "Contracts parsed and verified." : "Contract parsed successfully.");
+      toast.success("Contract parsed successfully. Running verification...");
+      toast.dismiss(loadingToast);
+
+      // Auto-verify after parsing
+      await autoVerifyAfterParse(normalized);
     } catch (error) {
       console.error("Manual contract parse error:", error);
       toast.error("Failed to parse contract document.");
@@ -556,6 +546,48 @@ function ContractsPageImpl(): React.JSX.Element {
       if (documentUrl) {
         setParsingDocs((prev) => prev.filter((d) => d !== documentUrl));
       }
+    }
+  };
+
+  const autoVerifyAfterParse = async (freshExtraction?: any): Promise<void> => {
+    const verifyToast = toast.loading("Auto-verifying contracts with bank data...");
+    try {
+      // Build contractResult from freshExtraction or fall back to session
+      let contractResult = freshExtraction;
+      if (!contractResult) {
+        const listKey = getExtractionListKey(recordId);
+        const listStored = sessionStorage.getItem(listKey);
+        const listParsed = listStored ? JSON.parse(listStored) : null;
+        const merged = Array.isArray(listParsed) && listParsed.length > 0 ? mergeContractExtractions(listParsed) : null;
+        contractResult = merged || extractionData;
+      }
+      if (!contractResult) return;
+
+      const bankResult = await getBankResultForVerify();
+      if (!bankResult) return; // No bank data yet — skip silently
+
+      const payload = {
+        contract_result: Array.isArray(contractResult?.contracts) ? contractResult.contracts : contractResult,
+        bank_result: bankResult,
+      };
+
+      const response = await axios.post("/api/verify-contracts", payload);
+      const resData = response.data;
+      const result = resData?.verify_result || resData;
+      setVerificationResult(result);
+      try {
+        if (recordId) sessionStorage.setItem(`contract_verification_${recordId}`, JSON.stringify(result));
+        // Also persist under the key the financial page reads
+        if (recordId) sessionStorage.setItem(`contract_extraction_${recordId}`, JSON.stringify(
+          Array.isArray(contractResult?.contracts) ? contractResult : contractResult
+        ));
+      } catch {}
+      toast.success("Contracts verified successfully.");
+    } catch (error: any) {
+      console.error("Auto-verify error:", error);
+      // Silent failure for auto-verify — don't block user flow
+    } finally {
+      toast.dismiss(verifyToast);
     }
   };
 
@@ -629,6 +661,8 @@ function ContractsPageImpl(): React.JSX.Element {
     for (const c of targets) {
       await parseContractDocument(c.document as string);
     }
+    // Run a final verification pass after all contracts are parsed
+    await autoVerifyAfterParse(undefined);
     setIsParsingAll(false);
   };
 
@@ -921,7 +955,7 @@ function ContractsPageImpl(): React.JSX.Element {
                 }}
               >
                 {isVerifying && <SpinnerIcon color="#fff" />}
-                {isVerifying ? "Verifying..." : "Verify Contracts"}
+                {isVerifying ? "Verifying..." : verificationResult ? "Re-verify Contracts" : "Verify Contracts"}
               </button>
             </div>
 

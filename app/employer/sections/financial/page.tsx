@@ -984,26 +984,44 @@ function ContractsSyncStep({ onComplete, onPrev, savedContracts, onSave, initial
   };
 
   const handleVerify = async () => {
-    if (!savedContracts || savedContracts.length === 0) {
-      toast.error("No contracts found to verify.");
-      return;
-    }
-
     setIsVerifying(true);
     const loadingToast = toast.loading("Verifying contracts with bank statements...");
 
     try {
-      let contractResult = null;
-      try {
-        const recordId = sessionStorage.getItem("current_hr_record_id");
-        if (recordId) {
-          const stored = sessionStorage.getItem(`contract_extraction_${recordId}`);
-          contractResult = stored ? JSON.parse(stored) : null;
+      const recordId = sessionStorage.getItem("current_hr_record_id");
+
+      // Try to get contract extraction data from all possible keys
+      let contractResult: any = null;
+      if (recordId) {
+        // 1. Try merged extraction list
+        try {
+          const listStored = sessionStorage.getItem(`contract_extractions_${recordId}`);
+          const listParsed = listStored ? JSON.parse(listStored) : null;
+          if (Array.isArray(listParsed) && listParsed.length > 0) {
+            // Merge all extractions
+            const sources = listParsed.map((e: any) => e?.source).filter(Boolean);
+            const parties = listParsed.flatMap((e: any) => Array.isArray(e?.parties) ? e.parties : []).filter(Boolean);
+            const contracts = listParsed.flatMap((e: any) => Array.isArray(e?.contracts) ? e.contracts : []).filter(Boolean);
+            contractResult = { source: sources, parties, contracts, total_valid_contracts: contracts.length };
+          }
+        } catch {}
+
+        // 2. Fall back to single extraction key
+        if (!contractResult) {
+          try {
+            const stored = sessionStorage.getItem(`contract_extraction_${recordId}`);
+            contractResult = stored ? JSON.parse(stored) : null;
+          } catch {}
         }
-      } catch {}
+      }
+
+      // 3. Fall back to savedContracts prop
+      if (!contractResult && savedContracts && savedContracts.length > 0) {
+        contractResult = { contracts: savedContracts };
+      }
 
       if (!contractResult) {
-        toast.error("Contract extraction data not found.");
+        toast.error("Contract extraction data not found. Please parse contracts first.");
         return;
       }
 
@@ -1015,7 +1033,7 @@ function ContractsSyncStep({ onComplete, onPrev, savedContracts, onSave, initial
       }));
 
       const payload = {
-        contract_result: contractResult,
+        contract_result: Array.isArray(contractResult?.contracts) ? contractResult.contracts : contractResult,
         bank_result: bankResult
       };
 
@@ -1036,7 +1054,7 @@ function ContractsSyncStep({ onComplete, onPrev, savedContracts, onSave, initial
       }
     } catch (error: any) {
       console.error("Verification error:", error);
-      toast.error("Failed to verify contracts.");
+      toast.error(error?.response?.data?.details || "Failed to verify contracts.");
     } finally {
       setIsVerifying(false);
       toast.dismiss(loadingToast);
@@ -1062,17 +1080,17 @@ function ContractsSyncStep({ onComplete, onPrev, savedContracts, onSave, initial
         </div>
         <button
           onClick={handleVerify}
-          disabled={isVerifying || !savedContracts?.length}
+          disabled={isVerifying}
           style={{
             display: "flex", alignItems: "center", gap: "8px",
             padding: "8px 16px", backgroundColor: "#F0F9FF",
             border: "1.5px solid #0EA5E9", borderRadius: "8px",
             color: "#0369A1", fontSize: "13px", fontWeight: "600",
-            cursor: (isVerifying || !savedContracts?.length) ? "not-allowed" : "pointer"
+            cursor: isVerifying ? "not-allowed" : "pointer"
           }}
         >
           {isVerifying ? <SpinnerIcon color="#0EA5E9" /> : <CheckIcon />}
-          {isVerifying ? "Verifying..." : "Verify via AI"}
+          {isVerifying ? "Verifying..." : verificationResults && verificationResults.length > 0 ? "Re-verify via AI" : "Verify via AI"}
         </button>
       </div>
       <p style={{ margin: "0 0 18px", fontSize: "13px", color: "#64748B" }}>Verify that contract payments are reflected in bank statements</p>
@@ -1091,13 +1109,13 @@ function ContractsSyncStep({ onComplete, onPrev, savedContracts, onSave, initial
                     <div style={{ fontSize: "12px", color: "#64748B" }}>{c.contract_amount || "N/A"} • {c.period || "N/A"}</div>
                   </div>
                 </div>
-                {verificationResults?.find(r => r.contract.includes(c.contract_amount || "")) && (
+                {verificationResults?.find(r => r.contract?.includes(c.contract_amount || "")) && (
                   <span style={{
                     fontSize: "11px", fontWeight: "700", padding: "3px 8px", borderRadius: "12px",
-                    backgroundColor: verificationResults.find(r => r.contract.includes(c.contract_amount || ""))?.status === "Verified" ? "#DCFCE7" : "#FEE2E2",
-                    color: verificationResults.find(r => r.contract.includes(c.contract_amount || ""))?.status === "Verified" ? "#166534" : "#991B1B"
+                    backgroundColor: verificationResults.find(r => r.contract?.includes(c.contract_amount || ""))?.status === "Verified" ? "#DCFCE7" : "#FEE2E2",
+                    color: verificationResults.find(r => r.contract?.includes(c.contract_amount || ""))?.status === "Verified" ? "#166534" : "#991B1B"
                   }}>
-                    {verificationResults.find(r => r.contract.includes(c.contract_amount || ""))?.status}
+                    {verificationResults.find(r => r.contract?.includes(c.contract_amount || ""))?.status}
                   </span>
                 )}
               </div>
