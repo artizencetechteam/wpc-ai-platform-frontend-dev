@@ -1020,11 +1020,14 @@ function ContractsSyncStep({ onComplete, onPrev, savedContracts, onSave, initial
       };
 
       const response = await axios.post("/api/verify-contracts", payload);
-      const results = response.data.verification_summary || [];
+      const resData = response.data || {};
+      const verify = resData.verify_result || resData;
+      const results = verify.verification_summary || [];
       setVerificationResults(results);
 
-      if (response.data.total_verified > 0) {
-        toast.success(`Successfully verified ${response.data.total_verified} contract(s)!`);
+      const totalVerified = verify.total_verified ?? resData.total_verified ?? 0;
+      if (totalVerified > 0) {
+        toast.success(`Successfully verified ${totalVerified} contract(s)!`);
         setPaymentsReflected("yes");
         persistSelection("yes", futureEngagement, results);
       } else {

@@ -13,7 +13,7 @@ export async function POST(req: Request) {
     }
 
     // Forward to the external API
-    const response = await fetch("http://37.27.113.235:8365/contract_url", {
+    const response = await fetch("http://37.27.113.235:5567/contract_url", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ pdf_url: pdfUrl }),

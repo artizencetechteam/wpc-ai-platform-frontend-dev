@@ -10,11 +10,6 @@ import { getClientToken } from "@/app/employer/sections/company/page";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
-interface Tab {
-  label: string;
-  id: string;
-}
-
 interface Progress {
   [key: string]: boolean;
 }
@@ -30,21 +25,9 @@ interface Contract {
   text_block?: string;
 }
 
-interface ContractSummary {
-  requireAction: number;
-}
-
-interface RadioRowProps {
-  value: string;
-  selected: string | null;
-  onChange: (value: string) => void;
-  label: string;
-}
-
 interface AddContractFormProps {
   onAdd: (contract: Contract) => void;
   onCancel: () => void;
-  onParseDocument?: (documentUrl: string) => Promise<void>;
 }
 
 const MONTH_MAP: Record<string, string> = {
@@ -77,7 +60,15 @@ const formatDate = (raw?: string | null): string | null => {
   return trimmed;
 };
 
-const toBankResult = (transactions: any[]): Array<{ date: string | null; description: string; paid_in: number | null; paid_out: number | null; }> => {
+const toBankResult = (transactions: any[]): Array<{
+  date: string | null;
+  description: string;
+  paid_in: number | null;
+  paid_out: number | null;
+  balance?: number | null;
+  flags?: any;
+  parsed_date?: string | null;
+}> => {
   return transactions.map((t: any) => {
     const date = formatDate(t.date || t.parsed_date || t.transaction_date);
     const description = t.description || t.reference || t.note || t.narration || "Unknown";
@@ -85,7 +76,10 @@ const toBankResult = (transactions: any[]): Array<{ date: string | null; descrip
     const paidOut = t.paid_out ?? (t.type === "outgoing" ? t.amount : null);
     const paid_in = paidIn !== null && paidIn !== undefined ? Number(paidIn) : null;
     const paid_out = paidOut !== null && paidOut !== undefined ? Number(paidOut) : null;
-    return { date, description, paid_in, paid_out };
+    const balance = t.balance !== undefined ? Number(t.balance) : null;
+    const flags = t.flags || undefined;
+    const parsed_date = t.parsed_date || null;
+    return { date, description, paid_in, paid_out, balance, flags, parsed_date };
   });
 };
 
@@ -114,6 +108,29 @@ const mergeContractExtractions = (extractions: any[]) => {
     total_valid_contracts,
     contracts,
   };
+};
+
+const normalizeContractExtraction = (data: any) => {
+  if (!data) return null;
+
+  if (Array.isArray(data.contracts)) {
+    return {
+      ...data,
+      contracts: data.contracts,
+      total_valid_contracts: data.total_valid_contracts ?? data.contracts.length,
+    };
+  }
+
+  if (data.contracts && Array.isArray(data.contracts.contracts)) {
+    return {
+      source: data.source,
+      parties: data.parties,
+      contracts: data.contracts.contracts,
+      total_valid_contracts: data.contracts.total_valid_contracts ?? data.contracts.contracts.length,
+    };
+  }
+
+  return data;
 };
 
 // ─── Session helpers ──────────────────────────────────────────────────────────
@@ -150,6 +167,13 @@ const ContractFileIcon = (): React.JSX.Element => (
   </svg>
 );
 
+const UploadIcon = (): React.JSX.Element => (
+  <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+    <path d="M12 18V8M12 8l-4 4M12 8l4 4" stroke="#9CA3AF" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+    <path d="M4 20h16" stroke="#9CA3AF" strokeWidth="1.6" strokeLinecap="round" />
+  </svg>
+);
+
 const GreenCheck = (): React.JSX.Element => (
   <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
     <circle cx="9" cy="9" r="8" stroke="#16A34A" strokeWidth="1.4" fill="none" />
@@ -164,13 +188,6 @@ const YellowWarn = (): React.JSX.Element => (
   </svg>
 );
 
-const UploadIcon = (): React.JSX.Element => (
-  <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-    <path d="M12 18V8M12 8l-4 4M12 8l4 4" stroke="#9CA3AF" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
-    <path d="M4 20h16" stroke="#9CA3AF" strokeWidth="1.6" strokeLinecap="round" />
-  </svg>
-);
-
 const SpinnerIcon = ({ color = "#0852C9" }: { color?: string }) => (
   <svg width="20" height="20" viewBox="0 0 20 20" fill="none" style={{ animation: "spin 1s linear infinite" }}>
     <circle cx="10" cy="10" r="8" stroke="#CBD5E1" strokeWidth="2.5" />
@@ -179,12 +196,6 @@ const SpinnerIcon = ({ color = "#0852C9" }: { color?: string }) => (
   </svg>
 );
 
-const CloudIcon = (): React.JSX.Element => (
-  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M17.5 19L19 19C21.2091 19 23 17.2091 23 15C23 12.7909 21.2091 11 19 11C18.8296 11 18.6625 11.0107 18.4988 11.0317C17.7412 8.14811 15.1182 6 12 6C9.11584 6 6.6247 7.8258 5.67232 10.3957C3.12061 10.7483 1 12.9163 1 15.5C1 18.5376 3.46243 21 6.5 21L8 21" />
-    <path d="M12 11V21M12 11L9 14M12 11L15 14" />
-  </svg>
-);
 
 const TrashIcon = (): React.JSX.Element => (
   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#EF4444" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -207,13 +218,14 @@ function TopNav({ onBack }: { onBack: () => void }) {
 
 // ─── AddContractForm ──────────────────────────────────────────────────────────
 
-function AddContractForm({ onAdd, onCancel, onParseDocument }: AddContractFormProps): React.JSX.Element {
+function AddContractForm({ onAdd, onCancel }: AddContractFormProps): React.JSX.Element {
   const [clientName, setClientName] = useState<string>("");
   const [exists, setExists] = useState<string | null>(null);
   const [aligns, setAligns] = useState<string | null>(null);
   const [fileName, setFileName] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [fileObject, setFileObject] = useState<File | null>(null);
+  const [uploadedUrl, setUploadedUrl] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const canAdd = clientName.trim() && exists && !isUploading;
@@ -232,30 +244,30 @@ function AddContractForm({ onAdd, onCancel, onParseDocument }: AddContractFormPr
     return publicUrl;
   };
 
+  const ensureUploaded = async (): Promise<string | null> => {
+    if (uploadedUrl) return uploadedUrl;
+    if (!fileObject) return null;
+    setIsUploading(true);
+    const loadingToast = toast.loading("Uploading contract document...");
+    try {
+      const url = await uploadToCloudflare(fileObject);
+      setUploadedUrl(url);
+      toast.success("Document uploaded successfully.");
+      return url;
+    } catch (error) {
+      toast.error("Failed to upload document.");
+      return null;
+    } finally {
+      setIsUploading(false);
+      toast.dismiss(loadingToast);
+    }
+  };
+
   const handleAdd = async (): Promise<void> => {
     if (!canAdd) return;
-    
-    let documentUrl = fileName;
-    
-    if (fileObject) {
-      setIsUploading(true);
-      const loadingToast = toast.loading("Uploading contract document...");
-      try {
-        documentUrl = await uploadToCloudflare(fileObject);
-        toast.success("Document uploaded successfully.");
-      } catch (error) {
-        toast.error("Failed to upload document.");
-        setIsUploading(false);
-        toast.dismiss(loadingToast);
-        return;
-      } finally {
-        toast.dismiss(loadingToast);
-      }
-    }
 
-    if (documentUrl && documentUrl.startsWith("http") && onParseDocument) {
-      await onParseDocument(documentUrl);
-    }
+    const uploaded = await ensureUploaded();
+    const documentUrl = uploaded || fileName;
 
     onAdd({
       id: Date.now(),
@@ -264,10 +276,9 @@ function AddContractForm({ onAdd, onCancel, onParseDocument }: AddContractFormPr
       aligns: exists === "no" ? "no" : (aligns as "yes" | "no" | null),
       document: documentUrl,
     });
-    setIsUploading(false);
   };
 
-  const RadioRow = ({ value, selected, onChange, label }: RadioRowProps): React.JSX.Element => (
+  const RadioRow = ({ value, selected, onChange, label }: { value: string; selected: string | null; onChange: (value: string) => void; label: string; }): React.JSX.Element => (
     <div
       onClick={() => onChange(value)}
       style={{
@@ -328,36 +339,37 @@ function AddContractForm({ onAdd, onCancel, onParseDocument }: AddContractFormPr
       {/* Upload */}
       {showUpload && (
         <div style={{ marginBottom: "20px" }}>
-          <label style={lbl}>Upload Contract Document (Optional)</label>
-          <input 
-            ref={inputRef} 
-            type="file" 
-            accept=".pdf" 
-            style={{ display: "none" }} 
-            onChange={(e) => {
-              const file = e.target.files?.[0];
-              if (file) {
-                setFileObject(file);
-                setFileName(file.name);
-              }
-            }} 
-          />
-          <div
-            onClick={() => !isUploading && inputRef.current?.click()}
-            style={{
-              border: "1.5px dashed #D1D5DB", borderRadius: "8px", padding: "24px 20px",
-              textAlign: "center", cursor: isUploading ? "not-allowed" : "pointer", backgroundColor: "#F9FAFB",
-              opacity: isUploading ? 0.6 : 1,
-            }}
-          >
-            <div style={{ display: "flex", justifyContent: "center", marginBottom: "6px" }}>
-              {isUploading ? <SpinnerIcon color="#9CA3AF" /> : <UploadIcon />}
-            </div>
-            <p style={{ margin: 0, fontSize: "13px", color: "#9CA3AF" }}>
-              {isUploading ? "Uploading..." : (fileName || "Upload contract PDF")}
-            </p>
+        <label style={lbl}>Upload Contract Document (Optional)</label>
+        <input 
+          ref={inputRef} 
+          type="file" 
+          accept=".pdf" 
+          style={{ display: "none" }} 
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            if (file) {
+              setFileObject(file);
+              setFileName(file.name);
+              setUploadedUrl(null);
+            }
+          }} 
+        />
+        <div
+          onClick={() => !isUploading && inputRef.current?.click()}
+          style={{
+            border: "1.5px dashed #D1D5DB", borderRadius: "8px", padding: "24px 20px",
+            textAlign: "center", cursor: isUploading ? "not-allowed" : "pointer", backgroundColor: "#F9FAFB",
+            opacity: isUploading ? 0.6 : 1,
+          }}
+        >
+          <div style={{ display: "flex", justifyContent: "center", marginBottom: "6px" }}>
+            {isUploading ? <SpinnerIcon color="#9CA3AF" /> : <UploadIcon />}
           </div>
+          <p style={{ margin: 0, fontSize: "13px", color: "#9CA3AF" }}>
+            {isUploading ? "Uploading..." : (fileName || "Upload contract PDF")}
+          </p>
         </div>
+      </div>
       )}
 
       {/* Actions */}
@@ -394,11 +406,13 @@ function ContractsPageImpl(): React.JSX.Element {
   const [recordId, setRecordId] = useState<number | null>(null);
   const [businessNature, setBusinessNature] = useState<string>("");
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [isParsing, setIsParsing] = useState(false);
+  const [isParsingAll, setIsParsingAll] = useState(false);
   const [isVerifying, setIsVerifying] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
   const [extractionData, setExtractionData] = useState<any>(null);
   const [verificationResult, setVerificationResult] = useState<any>(null);
+  const [showDetailsModal, setShowDetailsModal] = useState(false);
+  const [parsedDocs, setParsedDocs] = useState<string[]>([]);
+  const [parsingDocs, setParsingDocs] = useState<string[]>([]);
 
   const getExtractionListKey = (id: number | null) => id ? `contract_extractions_${id}` : "contract_extractions";
   const getExtractionKey = (id: number | null) => id ? `contract_extraction_${id}` : "contract_extraction";
@@ -462,84 +476,86 @@ function ContractsPageImpl(): React.JSX.Element {
     }
   }, [searchParams]);
 
-  const handleContractUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  const getBankResultForVerify = async (): Promise<ReturnType<typeof toBankResult> | null> => {
+    if (!recordId) return null;
+    const bankKey = `bank_transactions_${recordId}`;
+    const bankStored = sessionStorage.getItem(bankKey);
+    let bankTransactions: any[] | null = bankStored ? JSON.parse(bankStored) : null;
 
-    setIsParsing(true);
-    const loadingToast = toast.loading("Uploading and analyzing contract PDF...");
-
-    try {
-      // 1. Upload to Cloudflare R2
-      const { data: presignData } = await axios.post("/api/upload-presign", {
-        fileName: file.name,
-        fileType: file.type,
-      });
-      const { presignedUrl, publicUrl } = presignData;
-      await axios.put(presignedUrl, file, {
-        headers: { "Content-Type": file.type },
-      });
-
-      // 2. Extract data (send URL to extraction service)
-      const encodedPdfUrl = encodeURI(publicUrl);
-      const response = await axios.post("/api/extract-contract", {
-        pdf_url: encodedPdfUrl,
-      });
-      const resData = response.data;
-      
-      appendExtraction(recordId, resData);
-
-      if (resData.contracts && Array.isArray(resData.contracts)) {
-        const clientParty = resData.parties?.find((p: any) => p.role === "Client");
-        const clientName = clientParty?.entity_name || "Extracted Client";
-
-        const newContracts: Contract[] = resData.contracts.map((c: any, idx: number) => ({
-          id: Date.now() + idx,
-          clientName: clientName,
-          exists: "yes",
-          aligns: "yes",
-          document: publicUrl, // Use the Cloudflare URL
-          contract_amount: c.contract_amount,
-          period: c.period,
-          text_block: c.text_block
-        }));
-
-        setContracts((prev) => [...prev, ...newContracts]);
-        try {
-          const storageKey = recordId ? `contract_list_${recordId}` : "contract_list";
-          sessionStorage.setItem(storageKey, JSON.stringify([...contracts, ...newContracts]));
-        } catch {}
-        toast.success(`Successfully extracted ${newContracts.length} contracts.`);
-      } else {
-        toast.error("No contracts found in the document.");
+    if (!bankTransactions || !Array.isArray(bankTransactions) || bankTransactions.length === 0) {
+      const token = getClientToken();
+      const listRes = await listHRValidationRecordsAction(token);
+      if (listRes.success && Array.isArray(listRes.data)) {
+        const record = listRes.data.find((r: any) => r.id === recordId);
+        if (record?.transactions) {
+          try {
+            bankTransactions = typeof record.transactions === "string" ? JSON.parse(record.transactions) : record.transactions;
+          } catch {
+            bankTransactions = null;
+          }
+        }
       }
-
-      if (recordId) await handleVerifyContracts();
-    } catch (error: any) {
-      console.error("Contract extraction error:", error);
-      toast.error("Failed to extract contract details.");
-    } finally {
-      setIsParsing(false);
-      toast.dismiss(loadingToast);
-      if (fileInputRef.current) fileInputRef.current.value = "";
     }
+
+    if (!bankTransactions || !Array.isArray(bankTransactions) || bankTransactions.length === 0) {
+      return null;
+    }
+
+    const bankResult = toBankResult(bankTransactions);
+    if (bankResult.length === 0) return null;
+    return bankResult;
   };
 
-  const parseContractDocument = async (documentUrl: string): Promise<void> => {
-    const loadingToast = toast.loading("Parsing contract document...");
+  const parseContractDocument = async (documentUrl: string, opts?: { verify?: boolean }): Promise<void> => {
+    if (documentUrl) setParsingDocs((prev) => Array.from(new Set([...prev, documentUrl])));
+    const loadingToast = toast.loading(opts?.verify ? "Parsing and verifying contracts..." : "Parsing contract document...");
     try {
       const encodedPdfUrl = encodeURI(documentUrl);
-      const response = await axios.post("/api/extract-contract", {
-        pdf_url: encodedPdfUrl,
-      });
+      const payload: any = { pdf_url: encodedPdfUrl };
+
+      if (opts?.verify) {
+        const bankResult = await getBankResultForVerify();
+        if (!bankResult) {
+          toast.error("No bank transactions found for verification.");
+          return;
+        }
+        payload.bank_result = bankResult;
+      }
+
+      const response = await axios.post("/api/extract-contract", payload);
       const resData = response.data;
-      appendExtraction(recordId, resData);
-      toast.success("Contract parsed successfully.");
+      const normalized = normalizeContractExtraction(resData?.contracts ? resData.contracts : resData);
+      if (normalized?.contracts && Array.isArray(normalized.contracts)) {
+        normalized.contracts = normalized.contracts.map((c: any) => ({
+          ...c,
+          document_url: documentUrl,
+        }));
+      }
+      if (normalized) appendExtraction(recordId, normalized);
+
+      const parsedContracts = normalized?.contracts && Array.isArray(normalized.contracts) ? normalized.contracts : [];
+      if (parsedContracts.length > 0) {
+        // Parsed contracts are shown only in the Parsed Contracts card (API response), not added to manual list.
+      }
+
+      if (resData?.verify_result) {
+        setVerificationResult(resData.verify_result);
+        try {
+          const vKey = recordId ? `contract_verification_${recordId}` : "contract_verification";
+          sessionStorage.setItem(vKey, JSON.stringify(resData.verify_result));
+        } catch {}
+      }
+
+      setParsedDocs((prev) => (documentUrl ? Array.from(new Set([...prev, documentUrl])) : prev));
+      toast.success(opts?.verify ? "Contracts parsed and verified." : "Contract parsed successfully.");
     } catch (error) {
       console.error("Manual contract parse error:", error);
       toast.error("Failed to parse contract document.");
     } finally {
       toast.dismiss(loadingToast);
+      if (documentUrl) {
+        setParsingDocs((prev) => prev.filter((d) => d !== documentUrl));
+      }
     }
   };
 
@@ -566,38 +582,14 @@ function ContractsPageImpl(): React.JSX.Element {
         return;
       }
 
-      const bankKey = `bank_transactions_${recordId}`;
-      const bankStored = sessionStorage.getItem(bankKey);
-      let bankTransactions: any[] | null = bankStored ? JSON.parse(bankStored) : null;
-
-      if (!bankTransactions || !Array.isArray(bankTransactions) || bankTransactions.length === 0) {
-        const token = getClientToken();
-        const listRes = await listHRValidationRecordsAction(token);
-        if (listRes.success && Array.isArray(listRes.data)) {
-          const record = listRes.data.find((r: any) => r.id === recordId);
-          if (record?.transactions) {
-            try {
-              bankTransactions = typeof record.transactions === "string" ? JSON.parse(record.transactions) : record.transactions;
-            } catch {
-              bankTransactions = null;
-            }
-          }
-        }
-      }
-
-      if (!bankTransactions || !Array.isArray(bankTransactions) || bankTransactions.length === 0) {
-        toast.error("No bank transactions found for verification.");
-        return;
-      }
-
-      const bankResult = toBankResult(bankTransactions);
-      if (bankResult.length === 0) {
+      const bankResult = await getBankResultForVerify();
+      if (!bankResult) {
         toast.error("No bank transactions found for verification.");
         return;
       }
 
       const payload = {
-        contract_result: contractResult,
+        contract_result: Array.isArray(contractResult?.contracts) ? contractResult.contracts : contractResult,
         bank_result: bankResult,
       };
 
@@ -608,10 +600,10 @@ function ContractsPageImpl(): React.JSX.Element {
 
       const response = await axios.post("/api/verify-contracts", payload);
       const resData = response.data;
-      setVerificationResult(resData);
+      setVerificationResult(resData?.verify_result || resData);
       try {
         const vKey = `contract_verification_${recordId}`;
-        sessionStorage.setItem(vKey, JSON.stringify(resData));
+        sessionStorage.setItem(vKey, JSON.stringify(resData?.verify_result || resData));
       } catch {}
       toast.success("Contracts verified successfully.");
     } catch (error: any) {
@@ -626,6 +618,18 @@ function ContractsPageImpl(): React.JSX.Element {
   const handleAddContract = (contract: Contract): void => {
     setContracts((prev) => [...prev, contract]);
     setShowForm(false);
+  };
+
+  const handleParseAllContracts = async (): Promise<void> => {
+    const targets = contracts.filter(
+      (c) => c.document && c.document.startsWith("http") && !parsedDocs.includes(c.document)
+    );
+    if (targets.length === 0) return;
+    setIsParsingAll(true);
+    for (const c of targets) {
+      await parseContractDocument(c.document as string);
+    }
+    setIsParsingAll(false);
   };
 
   const handleDeleteContract = (id: number): void => {
@@ -681,9 +685,10 @@ function ContractsPageImpl(): React.JSX.Element {
   }
 
   const hasContracts = contracts.length > 0;
-  const hasIssues = contracts.some(c => c.exists === "no" || c.aligns === "no");
   const needsContracts = businessNature === "b2b" || businessNature === "healthcare";
   const canContinue = !needsContracts || (needsContracts && hasContracts);
+  const extractedContracts = Array.isArray(extractionData?.contracts) ? extractionData.contracts : [];
+  const verificationSummary = Array.isArray(verificationResult?.verification_summary) ? verificationResult.verification_summary : [];
 
   return (
     <div style={{ fontFamily: "'Segoe UI', system-ui, sans-serif", backgroundColor: "#F1F5F9", minHeight: "100vh" }}>
@@ -734,18 +739,34 @@ function ContractsPageImpl(): React.JSX.Element {
             {hasContracts && (
               <div style={{ backgroundColor: "white", borderRadius: "10px", border: "1px solid #E2E8F0", padding: "20px 24px", marginBottom: "14px" }}>
                 <h3 style={{ margin: "0 0 16px", fontSize: "15px", fontWeight: "700", color: "#0F172A" }}>Added Contracts</h3>
-                <div style={{ display: "grid", gridTemplateColumns: "1.5fr 1fr 1fr 1fr 1fr 0.8fr 0.5fr", padding: "0 4px 10px", borderBottom: "1px solid #F1F5F9" }}>
-                  {["Client Name", "Amount", "Period", "Exists", "Aligns", "Doc", ""].map((h) => (
+                <div style={{ marginBottom: "12px" }}>
+                  <div style={{ fontSize: "12.5px", fontWeight: "600", color: "#475569", marginBottom: "6px" }}>Uploaded Files</div>
+                  <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
+                    {Array.from(
+                      new Set(contracts.map((c) => c.document).filter((d): d is string => Boolean(d)))
+                    ).map((doc) => (
+                      <a
+                        key={doc}
+                        href={doc.startsWith("http") ? doc : "#"}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        style={{ fontSize: "12.5px", color: doc.startsWith("http") ? "#0852C9" : "#94A3B8", textDecoration: doc.startsWith("http") ? "underline" : "none" }}
+                      >
+                        {doc.split("/").pop() || "Document"}
+                      </a>
+                    ))}
+                  </div>
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "1.8fr 1fr 1fr 0.9fr 0.9fr 0.5fr", padding: "0 4px 10px", borderBottom: "1px solid #F1F5F9" }}>
+                  {["Client Name", "Amount", "Period", "Doc", "Parse", ""].map((h) => (
                     <div key={h} style={{ fontSize: "12.5px", color: "#94A3B8", fontWeight: "500" }}>{h}</div>
                   ))}
                 </div>
                 {contracts.map((c) => (
-                  <div key={c.id} style={{ display: "grid", gridTemplateColumns: "1.5fr 1fr 1fr 1fr 1fr 0.8fr 0.5fr", padding: "13px 4px", borderBottom: "1px solid #F8FAFC", alignItems: "center" }}>
+                  <div key={c.id} style={{ display: "grid", gridTemplateColumns: "1.8fr 1fr 1fr 0.9fr 0.9fr 0.5fr", padding: "13px 4px", borderBottom: "1px solid #F8FAFC", alignItems: "center" }}>
                     <div style={{ fontSize: "14px", color: "#0F172A", fontWeight: "500" }}>{c.clientName}</div>
                     <div style={{ fontSize: "13px", color: "#64748B" }}>{c.contract_amount || "—"}</div>
                     <div style={{ fontSize: "13px", color: "#64748B" }}>{c.period || "—"}</div>
-                    <div>{c.exists === "yes" ? <GreenCheck /> : <YellowWarn />}</div>
-                    <div>{c.aligns === "yes" ? <GreenCheck /> : c.aligns === "no" ? <YellowWarn /> : <span style={{ color: "#94A3B8" }}>—</span>}</div>
                     <div style={{ fontSize: "14px", color: "#94A3B8" }}>
                       {c.document ? (
                         <a 
@@ -763,6 +784,30 @@ function ContractsPageImpl(): React.JSX.Element {
                       ) : "—"}
                     </div>
                     <div>
+                      {c.document && parsingDocs.includes(c.document) ? (
+                        <SpinnerIcon color="#0852C9" />
+                      ) : c.document && parsedDocs.includes(c.document) ? (
+                        <span style={{ fontSize: "12px", fontWeight: "600", color: "#16A34A" }}>Parsed</span>
+                      ) : (
+                        <button
+                          onClick={() => c.document && c.document.startsWith("http") && parseContractDocument(c.document)}
+                          disabled={!c.document || !c.document.startsWith("http")}
+                          style={{
+                            padding: "8px 10px",
+                            backgroundColor: (!c.document || !c.document.startsWith("http")) ? "#93ABDE" : "#0852C9",
+                            color: "white",
+                            border: "none",
+                            borderRadius: "6px",
+                            fontSize: "12px",
+                            fontWeight: "600",
+                            cursor: (!c.document || !c.document.startsWith("http")) ? "not-allowed" : "pointer",
+                          }}
+                        >
+                          Parse
+                        </button>
+                      )}
+                    </div>
+                    <div>
                       <button 
                         onClick={() => handleDeleteContract(c.id)}
                         style={{ border: "none", backgroundColor: "transparent", cursor: "pointer", padding: "4px", display: "flex", alignItems: "center", justifyContent: "center" }}
@@ -773,6 +818,28 @@ function ContractsPageImpl(): React.JSX.Element {
                     </div>
                   </div>
                 ))}
+                <div style={{ marginTop: "14px", display: "flex", justifyContent: "flex-end" }}>
+                  <button
+                    onClick={handleParseAllContracts}
+                    disabled={isParsingAll || contracts.filter((c) => c.document && c.document.startsWith("http") && !parsedDocs.includes(c.document)).length === 0}
+                    style={{
+                      padding: "12px 16px",
+                      backgroundColor: (isParsingAll || contracts.filter((c) => c.document && c.document.startsWith("http") && !parsedDocs.includes(c.document)).length === 0) ? "#93ABDE" : "#0852C9",
+                      color: "white",
+                      border: "none",
+                      borderRadius: "8px",
+                      fontSize: "13.5px",
+                      fontWeight: "600",
+                      cursor: (isParsingAll || contracts.filter((c) => c.document && c.document.startsWith("http") && !parsedDocs.includes(c.document)).length === 0) ? "not-allowed" : "pointer",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "8px",
+                    }}
+                  >
+                    {isParsingAll && <SpinnerIcon color="#fff" />}
+                    {isParsingAll ? "Parsing..." : "Parse All Contracts"}
+                  </button>
+                </div>
               </div>
             )}
 
@@ -781,10 +848,9 @@ function ContractsPageImpl(): React.JSX.Element {
               <AddContractForm
                 onAdd={handleAddContract}
                 onCancel={() => setShowForm(false)}
-                onParseDocument={parseContractDocument}
               />
             ) : (
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px", marginBottom: "14px" }}>
+              <div style={{ marginBottom: "14px" }}>
                 <button
                   onClick={() => setShowForm(true)}
                   style={{
@@ -797,27 +863,42 @@ function ContractsPageImpl(): React.JSX.Element {
                 >
                   <span style={{ fontSize: "16px" }}>+</span> Add Manually
                 </button>
-                <button
-                  onClick={() => fileInputRef.current?.click()}
-                  disabled={isParsing}
-                  style={{
-                    width: "100%", padding: "14px", backgroundColor: "#F0F9FF",
-                    border: "1.5px solid #0EA5E9", borderRadius: "10px",
-                    fontSize: "14px", fontWeight: "600", color: "#0369A1",
-                    cursor: isParsing ? "not-allowed" : "pointer", display: "flex", alignItems: "center",
-                    justifyContent: "center", gap: "8px",
-                  }}
-                >
-                  {isParsing ? <SpinnerIcon color="#0EA5E9" /> : <CloudIcon />}
-                  {isParsing ? "Scanning..." : "Scan Contract PDF"}
-                </button>
-                <input
-                  type="file"
-                  accept=".pdf"
-                  ref={fileInputRef}
-                  onChange={handleContractUpload}
-                  style={{ display: "none" }}
-                />
+              </div>
+            )}
+
+            {extractedContracts.length > 0 && (
+              <div style={{ backgroundColor: "white", borderRadius: "10px", border: "1px solid #E2E8F0", padding: "20px 24px", marginBottom: "14px" }}>
+                <h3 style={{ margin: "0 0 16px", fontSize: "15px", fontWeight: "700", color: "#0F172A" }}>Parsed Contracts</h3>
+                <div style={{ display: "grid", gridTemplateColumns: "1.5fr 1fr 1fr 1fr 1fr 0.8fr", padding: "0 4px 10px", borderBottom: "1px solid #F1F5F9" }}>
+                  {["Client Name", "Amount", "Period", "Exists", "Aligns", "Doc"].map((h) => (
+                    <div key={h} style={{ fontSize: "12.5px", color: "#94A3B8", fontWeight: "500" }}>{h}</div>
+                  ))}
+                </div>
+                {extractedContracts.map((c: any, idx: number) => (
+                  <div key={idx} style={{ display: "grid", gridTemplateColumns: "1.5fr 1fr 1fr 1fr 1fr 0.8fr", padding: "13px 4px", borderBottom: "1px solid #F8FAFC", alignItems: "center" }}>
+                    <div style={{ fontSize: "14px", color: "#0F172A", fontWeight: "500" }}>{c.client || "—"}</div>
+                    <div style={{ fontSize: "13px", color: "#64748B" }}>{c.contract_amount || c.amount || "—"}</div>
+                    <div style={{ fontSize: "13px", color: "#64748B" }}>{c.period || "—"}</div>
+                    <div><GreenCheck /></div>
+                    <div><GreenCheck /></div>
+                    <div style={{ fontSize: "14px", color: "#94A3B8" }}>
+                      {c.document_url || c.pdf_url ? (
+                        <a 
+                          href={String(c.document_url || c.pdf_url)}
+                          target="_blank" 
+                          rel="noopener noreferrer"
+                          style={{ 
+                            color: String(c.document_url || c.pdf_url).startsWith('http') ? "#0852C9" : "#94A3B8", 
+                            textDecoration: String(c.document_url || c.pdf_url).startsWith('http') ? "underline" : "none",
+                            cursor: String(c.document_url || c.pdf_url).startsWith('http') ? "pointer" : "default"
+                          }}
+                        >
+                          {String(c.document_url || c.pdf_url).startsWith('http') ? "View" : "✓"}
+                        </a>
+                      ) : "—"}
+                    </div>
+                  </div>
+                ))}
               </div>
             )}
 
@@ -857,7 +938,7 @@ function ContractsPageImpl(): React.JSX.Element {
                     {verificationResult.verification_summary.map((v: any, idx: number) => (
                       <div key={idx} style={{ border: "1px solid #F1F5F9", borderRadius: "8px", padding: "10px 12px" }}>
                         <div style={{ fontSize: "13px", fontWeight: "600", color: "#0F172A" }}>
-                          Contract: {v.contract || "—"}
+                          Contract: {v.contract || v.contract_uid || "—"}
                         </div>
                         <div style={{ fontSize: "12.5px", color: v.status === "Verified" ? "#166534" : "#DC2626" }}>
                           Status: {v.status || "—"}
@@ -867,11 +948,54 @@ function ContractsPageImpl(): React.JSX.Element {
                             Match: {v.match_details.description || "—"} • {v.match_details.date || "—"} • {v.match_details.amount || "—"}
                           </div>
                         )}
+                        {v.matched_transaction && (
+                          <div style={{ fontSize: "12.5px", color: "#475569", marginTop: "4px" }}>
+                            Match: {v.matched_transaction.description || "—"} • {v.matched_transaction.date || "—"} • {v.matched_transaction.paid_in || v.matched_transaction.paid_out || "—"}
+                          </div>
+                        )}
                       </div>
                     ))}
                   </div>
                 ) : (
                   <div style={{ fontSize: "12.5px", color: "#94A3B8" }}>No verification results yet.</div>
+                )}
+              </div>
+            )}
+
+            {(extractedContracts.length > 0 || verificationSummary.length > 0) && (
+              <div style={{ backgroundColor: "white", borderRadius: "10px", border: "1px solid #E2E8F0", padding: "16px 20px", marginBottom: "14px" }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "10px" }}>
+                  <div style={{ fontSize: "14px", fontWeight: "700", color: "#0F172A" }}>Parsed & Verification Details</div>
+                  <button
+                    onClick={() => setShowDetailsModal(true)}
+                    style={{ border: "none", backgroundColor: "transparent", color: "#0852C9", fontSize: "12.5px", fontWeight: "600", cursor: "pointer" }}
+                  >
+                    Show more
+                  </button>
+                </div>
+                {extractedContracts.length > 0 && (
+                  <div style={{ marginBottom: "10px" }}>
+                    <div style={{ fontSize: "12.5px", fontWeight: "600", color: "#475569", marginBottom: "6px" }}>Contracts</div>
+                    <div style={{ display: "grid", gap: "6px" }}>
+                      {extractedContracts.slice(0, 3).map((c: any, idx: number) => (
+                        <div key={idx} style={{ fontSize: "12.5px", color: "#0F172A" }}>
+                          {c.client || "—"} • {c.contract_amount || c.amount || "—"} • {c.period || "—"}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {verificationSummary.length > 0 && (
+                  <div>
+                    <div style={{ fontSize: "12.5px", fontWeight: "600", color: "#475569", marginBottom: "6px" }}>Verification</div>
+                    <div style={{ display: "grid", gap: "6px" }}>
+                      {verificationSummary.slice(0, 3).map((v: any, idx: number) => (
+                        <div key={idx} style={{ fontSize: "12.5px", color: "#0F172A" }}>
+                          {v.client_name || "—"} • {v.status || "—"}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
                 )}
               </div>
             )}
@@ -906,6 +1030,59 @@ function ContractsPageImpl(): React.JSX.Element {
           Back to AO Assessment
         </button>
       </div>
+
+      {showDetailsModal && (
+        <div
+          onClick={() => setShowDetailsModal(false)}
+          style={{ position: "fixed", inset: 0, backgroundColor: "rgba(15, 23, 42, 0.5)", display: "flex", alignItems: "center", justifyContent: "center", padding: "24px", zIndex: 50 }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{ width: "min(900px, 100%)", maxHeight: "85vh", overflow: "auto", backgroundColor: "white", borderRadius: "12px", border: "1px solid #E2E8F0", padding: "20px 22px" }}
+          >
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "12px" }}>
+              <div style={{ fontSize: "16px", fontWeight: "700", color: "#0F172A" }}>Parsed & Verification Details</div>
+              <button onClick={() => setShowDetailsModal(false)} style={{ border: "none", backgroundColor: "transparent", fontSize: "14px", color: "#64748B", cursor: "pointer" }}>Close</button>
+            </div>
+
+            {extractedContracts.length > 0 && (
+              <div style={{ marginBottom: "16px" }}>
+                <div style={{ fontSize: "13px", fontWeight: "700", color: "#0F172A", marginBottom: "8px" }}>Contracts</div>
+                <div style={{ display: "grid", gap: "8px" }}>
+                  {extractedContracts.map((c: any, idx: number) => (
+                    <div key={idx} style={{ border: "1px solid #F1F5F9", borderRadius: "8px", padding: "10px 12px" }}>
+                      <div style={{ fontSize: "13px", fontWeight: "600", color: "#0F172A" }}>{c.client || "—"}</div>
+                      <div style={{ fontSize: "12.5px", color: "#475569" }}>Provider: {c.service_provider || "—"}</div>
+                      <div style={{ fontSize: "12.5px", color: "#475569" }}>Amount: {c.contract_amount || c.amount || "—"} • Period: {c.period || "—"}</div>
+                      <div style={{ fontSize: "12.5px", color: "#64748B", marginTop: "4px" }}>{c.text_block || "—"}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {verificationSummary.length > 0 && (
+              <div>
+                <div style={{ fontSize: "13px", fontWeight: "700", color: "#0F172A", marginBottom: "8px" }}>Verification</div>
+                <div style={{ display: "grid", gap: "8px" }}>
+                  {verificationSummary.map((v: any, idx: number) => (
+                    <div key={idx} style={{ border: "1px solid #F1F5F9", borderRadius: "8px", padding: "10px 12px" }}>
+                      <div style={{ fontSize: "13px", fontWeight: "600", color: "#0F172A" }}>{v.client_name || "—"}</div>
+                      <div style={{ fontSize: "12.5px", color: v.status === "Verified" ? "#166534" : "#DC2626" }}>Status: {v.status || "—"}</div>
+                      <div style={{ fontSize: "12.5px", color: "#475569" }}>Contract UID: {v.contract_uid || "—"}</div>
+                      {v.matched_transaction && (
+                        <div style={{ fontSize: "12.5px", color: "#475569", marginTop: "4px" }}>
+                          Match: {v.matched_transaction.description || "—"} • {v.matched_transaction.date || "—"} • {v.matched_transaction.paid_in || v.matched_transaction.paid_out || "—"}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
