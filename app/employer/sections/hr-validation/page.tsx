@@ -698,7 +698,7 @@ function HRRecordsValidationImpl() {
                   <button onClick={() => setModalStep("choose")} style={{ background: "none", border: "none", cursor: "pointer", color: "#475569", fontSize: "13px", fontWeight: "500" }}>Change</button>
                 </div>
                 <div style={{ marginBottom: "14px" }}>
-                  <label style={lbl}>Upload RTW Document *</label>
+                  <label style={lbl}>Upload RTW Document <span style={{ color: "#DC2626", fontWeight: "700" }}>*</span></label>
                   <RTWUploadArea
                     onFileChange={async (f, url, key) => {
                       setRtwForm((prev) => ({ ...prev, file: f, fileUrl: url || "", fileKey: key || "" }));
@@ -758,7 +758,7 @@ function HRRecordsValidationImpl() {
                   )}
                 </div>
                 <div style={{ marginBottom: "14px" }}>
-                  <label style={lbl}>Employee Full Name *</label>
+                  <label style={lbl}>Employee Full Name <span style={{ color: "#DC2626", fontWeight: "700" }}>*</span></label>
                   <input type="text" value={rtwForm.name} onChange={(e) => setRtwForm({ ...rtwForm, name: e.target.value })} placeholder="Enter full name" style={inputStyle} />
                 </div>
                 <div style={{ marginBottom: "14px" }}>
@@ -778,7 +778,7 @@ function HRRecordsValidationImpl() {
                   <input type="text" value={rtwForm.company_name} onChange={(e) => setRtwForm({ ...rtwForm, company_name: e.target.value })} placeholder="e.g. My Company Ltd" style={inputStyle} />
                 </div>
                 <div style={{ marginBottom: "14px" }}>
-                  <label style={lbl}>Expiry Date</label>
+                  <label style={lbl}>RTW Expiry Date <span style={{ color: "#64748B", fontWeight: "400", fontSize: "12px" }}>(Optional)</span></label>
                   <input type="date" value={rtwForm.expiryDate} onChange={(e) => setRtwForm({ ...rtwForm, expiryDate: e.target.value })} style={inputStyle} />
                 </div>
                 {rtwForm.fileUrl && (
@@ -788,7 +788,7 @@ function HRRecordsValidationImpl() {
                   </div>
                 )}
                 <div style={{ marginBottom: "22px" }}>
-                  <label style={lbl}>Employment Start Date *</label>
+                  <label style={lbl}>Employment Start Date <span style={{ color: "#DC2626", fontWeight: "700" }}>*</span></label>
                   <input type="date" value={rtwForm.startDate} onChange={(e) => setRtwForm({ ...rtwForm, startDate: e.target.value })} style={inputStyle} />
                 </div>
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
@@ -808,7 +808,7 @@ function HRRecordsValidationImpl() {
                   <button onClick={() => setModalStep("choose")} style={{ background: "none", border: "none", cursor: "pointer", color: "#475569", fontSize: "13px", fontWeight: "500" }}>Change</button>
                 </div>
                 <div style={{ marginBottom: "14px" }}>
-                  <label style={lbl}>Employee Full Name *</label>
+                  <label style={lbl}>Employee Full Name <span style={{ color: "#DC2626", fontWeight: "700" }}>*</span></label>
                   <input type="text" value={manualForm.name} onChange={(e) => setManualForm({ ...manualForm, name: e.target.value })} placeholder="Enter full name" style={inputStyle} />
                 </div>
                 <div style={{ marginBottom: "14px" }}>
@@ -828,7 +828,7 @@ function HRRecordsValidationImpl() {
                   </div>
                 </div>
                 <div style={{ marginBottom: "22px" }}>
-                  <label style={lbl}>Employment Start Date *</label>
+                  <label style={lbl}>Employment Start Date <span style={{ color: "#DC2626", fontWeight: "700" }}>*</span></label>
                   <input type="date" value={manualForm.startDate} onChange={(e) => setManualForm({ ...manualForm, startDate: e.target.value })} style={inputStyle} />
                 </div>
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
