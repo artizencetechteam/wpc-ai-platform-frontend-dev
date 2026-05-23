@@ -1004,14 +1004,14 @@ function ContractsSyncStep({ onComplete, onPrev, savedContracts, onSave, initial
             const contracts = listParsed.flatMap((e: any) => Array.isArray(e?.contracts) ? e.contracts : []).filter(Boolean);
             contractResult = { source: sources, parties, contracts, total_valid_contracts: contracts.length };
           }
-        } catch {}
+        } catch { }
 
         // 2. Fall back to single extraction key
         if (!contractResult) {
           try {
             const stored = sessionStorage.getItem(`contract_extraction_${recordId}`);
             contractResult = stored ? JSON.parse(stored) : null;
-          } catch {}
+          } catch { }
         }
       }
 

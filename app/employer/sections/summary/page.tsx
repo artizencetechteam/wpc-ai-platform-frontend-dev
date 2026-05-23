@@ -316,6 +316,13 @@ function SummaryPageImpl(): React.JSX.Element {
             issuesList.style.display = badge.isPositive ? "none" : "block";
           }
         }
+
+        // Contract verification row — update highlight bg + border
+        const contractRow = target.closest('.contract-verify-row');
+        if (contractRow) {
+          (contractRow as HTMLElement).style.backgroundColor = badge.isPositive ? "#F0FDF4" : "#FEF2F2";
+          (contractRow as HTMLElement).style.border = badge.isPositive ? "1px solid #BBF7D0" : "1px solid #FECACA";
+        }
       }
     }
     setBadgeDropdown(null);
@@ -332,7 +339,9 @@ function SummaryPageImpl(): React.JSX.Element {
     futureEngagement?: string | null;
     transactions?: Array<{ status: string }>;
   }>({});
-  const [contracts, setContracts] = useState<Array<{ clientName?: string; exists?: string; aligns?: string }>>([]);
+  const [contracts, setContracts] = useState<Array<{ clientName?: string; exists?: string; aligns?: string; document?: string | null; contract_amount?: string; period?: string }>>([]);
+  const [contractExtractionData, setContractExtractionData] = useState<any>(null);
+  const [contractVerificationResult, setContractVerificationResult] = useState<any>(null);
   const [pensionData, setPensionData] = useState<{ companyRegistered?: string; eligibilityChecks?: Record<string, unknown> }>({});
 
   const buildCurrentSignature = (): string => buildSummarySignature({
@@ -486,6 +495,32 @@ function SummaryPageImpl(): React.JSX.Element {
               if (saved.contracts) setContracts(saved.contracts);
               if (saved.pension) setPensionData(saved.pension);
               if (saved.manual_overrides) setManualOverrides(saved.manual_overrides);
+
+              // 4b. Contract extraction & verification data
+              if (saved.contract_extraction_data) {
+                setContractExtractionData(saved.contract_extraction_data);
+              }
+              // Try session storage for verification result
+              try {
+                const vKey = `contract_verification_${id}`;
+                const stored = sessionStorage.getItem(vKey);
+                if (stored) setContractVerificationResult(JSON.parse(stored));
+              } catch { }
+              // Also try list key for extraction
+              try {
+                const listKey = `contract_extractions_${id}`;
+                const listStored = sessionStorage.getItem(listKey);
+                const listParsed = listStored ? JSON.parse(listStored) : null;
+                if (Array.isArray(listParsed) && listParsed.length > 0) {
+                  // merge them
+                  const merged = listParsed.reduce((acc: any, e: any) => {
+                    if (!acc) return e;
+                    const contracts = [...(acc.contracts || []), ...(e.contracts || [])];
+                    return { ...acc, contracts, total_valid_contracts: contracts.length };
+                  }, null);
+                  if (merged) setContractExtractionData(merged);
+                }
+              } catch { }
 
               // 5. Financial Data
               const finRes = await listFinancialRecordsAction(token);
@@ -906,6 +941,7 @@ function SummaryPageImpl(): React.JSX.Element {
                   </div>
                 )}
 
+
                 {/* Workflow results */}
                 <div className="card-print" style={{ backgroundColor: "white", borderRadius: "12px", border: "1px solid #E2E8F0", padding: "20px 24px", marginBottom: "16px" }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "18px" }}>
@@ -1023,6 +1059,54 @@ function SummaryPageImpl(): React.JSX.Element {
                   )}
                 </div>
 
+                {/* Contract Verification card — after Employee Summary */}
+                {contractVerificationResult && (
+                  <div className="card-print" style={{ backgroundColor: "white", borderRadius: "12px", border: "1px solid #E2E8F0", padding: "20px 24px", marginBottom: "24px" }}>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "14px" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                        {workflowIcons.contracts()}
+                        <h3 style={{ margin: 0, fontSize: "16px", fontWeight: "700", color: "#0F172A" }}>Contract Verification</h3>
+                      </div>
+                      <span style={{ fontSize: "12.5px", color: "#64748B" }}>
+                        Total Verified: <strong style={{ color: "#0F172A" }}>{contractVerificationResult.total_verified ?? 0}</strong>
+                      </span>
+                    </div>
+
+                    {Array.isArray(contractVerificationResult.verification_summary) && contractVerificationResult.verification_summary.length > 0 ? (
+                      <div style={{ display: "grid", gap: "6px" }}>
+                        {contractVerificationResult.verification_summary.map((v: any, idx: number) => (
+                          <div key={idx} className="contract-verify-row" style={{
+                            display: "flex", alignItems: "center", justifyContent: "space-between",
+                            padding: "10px 14px", borderRadius: "8px",
+                            backgroundColor: v.status === "Verified" ? "#F0FDF4" : "#FEF2F2",
+                            border: `1px solid ${v.status === "Verified" ? "#BBF7D0" : "#FECACA"}`,
+                          }}>
+                            <div>
+                              <div style={{ fontSize: "13.5px", fontWeight: "600", color: "#0F172A" }}>{v.client_name || v.contract || "—"}</div>
+                              {v.matched_transaction && (
+                                <div style={{ fontSize: "12px", color: "#475569", marginTop: "3px" }}>
+                                  {[v.matched_transaction.description, v.matched_transaction.date, (v.matched_transaction.paid_in || v.matched_transaction.paid_out) ? `£${(v.matched_transaction.paid_in || v.matched_transaction.paid_out)?.toLocaleString()}` : null].filter(Boolean).join(" • ")}
+                                </div>
+                              )}
+                            </div>
+                            <span
+                              className="editable-badge"
+                              style={{
+                                padding: "4px 12px", borderRadius: "20px", fontSize: "12px", fontWeight: "700", flexShrink: 0,
+                                backgroundColor: v.status === "Verified" ? "#16A34A" : "#DC2626",
+                                color: "white",
+                                cursor: isEditMode ? "pointer" : "default",
+                              }}
+                            >{v.status || "—"}</span>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div style={{ fontSize: "13px", color: "#94A3B8" }}>No verification results available.</div>
+                    )}
+                  </div>
+                )}
+
                 {/* Comments Section (Visible in Report/Print) */}
                 {Object.entries(comments).some(([_, text]) => text && text.trim() !== "") && (
                   <div className="card-print" style={{ backgroundColor: "white", borderRadius: "12px", border: "1px solid #E2E8F0", padding: "20px 24px", marginBottom: "24px" }}>
@@ -1073,28 +1157,28 @@ function SummaryPageImpl(): React.JSX.Element {
               Download Report
             </button>
             {isEditMode && (
-            <button onClick={() => {
-              if (isEditMode && printContainerRef.current) {
-                const html = printContainerRef.current.innerHTML;
-                setSavedHtml(html);
-                if (recordId) {
-                  sessionStorage.setItem(`report_edits_${recordId}`, html);
-                  const signature = buildCurrentSignature();
-                  sessionStorage.setItem(`summary_source_sig_${recordId}`, signature);
-                  void persistSummaryHtml(html, signature);
+              <button onClick={() => {
+                if (isEditMode && printContainerRef.current) {
+                  const html = printContainerRef.current.innerHTML;
+                  setSavedHtml(html);
+                  if (recordId) {
+                    sessionStorage.setItem(`report_edits_${recordId}`, html);
+                    const signature = buildCurrentSignature();
+                    sessionStorage.setItem(`summary_source_sig_${recordId}`, signature);
+                    void persistSummaryHtml(html, signature);
+                  }
+                  setIsEditMode(false);
                 }
-                setIsEditMode(false);
-              }
-              setTimeout(() => window.print(), 100);
-            }} style={{
-              display: "flex", alignItems: "center", justifyContent: "center", gap: "8px",
-              padding: "13px 20px", backgroundColor: "#16A34A", color: "white",
-              border: "none", borderRadius: "8px",
-              fontSize: "14px", fontWeight: "600", cursor: "pointer",
-            }}>
-              <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M8 2v8M8 10l-3-3M8 10l3-3" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /><path d="M2 13h12" stroke="white" strokeWidth="1.5" strokeLinecap="round" /></svg>
-              Save & Download Report
-            </button>
+                setTimeout(() => window.print(), 100);
+              }} style={{
+                display: "flex", alignItems: "center", justifyContent: "center", gap: "8px",
+                padding: "13px 20px", backgroundColor: "#16A34A", color: "white",
+                border: "none", borderRadius: "8px",
+                fontSize: "14px", fontWeight: "600", cursor: "pointer",
+              }}>
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M8 2v8M8 10l-3-3M8 10l3-3" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /><path d="M2 13h12" stroke="white" strokeWidth="1.5" strokeLinecap="round" /></svg>
+                Save & Download Report
+              </button>
             )}
           </div>
         )}
