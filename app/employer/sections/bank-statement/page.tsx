@@ -715,43 +715,49 @@ function BankStatementImpl() {
               const innerW = CHART_W - PAD_L - PAD_R;
               const innerH = CHART_H - PAD_T - PAD_B;
 
-              const getRealData = () => {
-                if (monthlySummary && Object.keys(monthlySummary).length > 0) {
-                  return Object.entries(monthlySummary).map(([key, val]: [string, any]) => {
-                    const parts = key.split("-");
-                    if (parts.length !== 3) return null;
-                    const [, mm, yyyy] = parts;
-                    const d = new Date(parseInt(yyyy), parseInt(mm) - 1, 1);
-                    return {
-                      in: val.total_incoming,
-                      out: val.total_outgoing,
-                      label: d.toLocaleString("default", { month: "long" }),
-                      year: parseInt(yyyy),
-                      monthIndex: parseInt(mm) - 1
-                    };
-                  })
-                  .filter((i): i is any => i !== null)
-                  .sort((a, b) => a.year !== b.year ? a.year - b.year : a.monthIndex - b.monthIndex);
+              const getMonthlySummary = () => {
+                if (!monthlySummary || Object.keys(monthlySummary).length === 0) return null;
+                if ((monthlySummary as any).monthly_summary && typeof (monthlySummary as any).monthly_summary === "object") {
+                  return (monthlySummary as any).monthly_summary;
                 }
-
-                const months: Record<string, any> = {};
-                transactions.forEach(t => {
-                  const parts = t.date.split("-");
-                  if (parts.length !== 3) return;
-                  const [, mm, yyyy] = parts;
-                  const key = `${yyyy}-${mm}`;
-                  if (!months[key]) {
-                    const d = new Date(parseInt(yyyy), parseInt(mm) - 1, 1);
-                    months[key] = { in: 0, out: 0, label: d.toLocaleString("default", { month: "long" }), year: parseInt(yyyy), monthIndex: parseInt(mm) - 1 };
-                  }
-                  if (t.type === "incoming") months[key].in += t.amount;
-                  else months[key].out += t.amount;
-                });
-                return Object.values(months).sort((a, b) => a.year !== b.year ? a.year - b.year : a.monthIndex - b.monthIndex);
+                return monthlySummary;
               };
 
-              const data = getRealData();
-              if (data.length === 0) return null;
+              const summary = getMonthlySummary();
+              if (!summary || Object.keys(summary).length === 0) {
+                return (
+                  <div style={{ marginBottom: "32px", background: "white", borderRadius: "16px", border: "1px solid #E2E8F0", padding: "24px", boxShadow: "0 1px 3px rgba(0,0,0,0.06)" }}>
+                    <h3 style={{ margin: 0, fontSize: "16px", fontWeight: "700", color: "#0F172A" }}>Workflow 2: Cash Flow Pattern</h3>
+                    <p style={{ margin: "8px 0 0", fontSize: "13px", color: "#64748B" }}>No graph available — monthly summary not provided.</p>
+                  </div>
+                );
+              }
+
+              const data = Object.entries(summary)
+                .map(([key, val]: [string, any]) => {
+                  const parts = key.split("-");
+                  if (parts.length !== 2) return null;
+                  const [yyyy, mm] = parts;
+                  const d = new Date(parseInt(yyyy, 10), parseInt(mm, 10) - 1, 1);
+                  return {
+                    in: val.total_incoming,
+                    out: val.total_outgoing,
+                    label: d.toLocaleString("default", { month: "long" }),
+                    year: parseInt(yyyy, 10),
+                    monthIndex: parseInt(mm, 10) - 1
+                  };
+                })
+                .filter((i): i is any => i !== null)
+                .sort((a, b) => a.year !== b.year ? a.year - b.year : a.monthIndex - b.monthIndex);
+
+              if (data.length === 0) {
+                return (
+                  <div style={{ marginBottom: "32px", background: "white", borderRadius: "16px", border: "1px solid #E2E8F0", padding: "24px", boxShadow: "0 1px 3px rgba(0,0,0,0.06)" }}>
+                    <h3 style={{ margin: 0, fontSize: "16px", fontWeight: "700", color: "#0F172A" }}>Workflow 2: Cash Flow Pattern</h3>
+                    <p style={{ margin: "8px 0 0", fontSize: "13px", color: "#64748B" }}>No graph available — monthly summary is empty.</p>
+                  </div>
+                );
+              }
               const maxVal = Math.max(...data.flatMap(d => [d.in, d.out]), 1000);
               const yMax = Math.ceil(maxVal / 1000) * 1000 * 1.2;
               const yTicks = [0, 0.25, 0.5, 0.75, 1].map(f => Math.round(yMax * f));
