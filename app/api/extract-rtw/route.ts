@@ -9,7 +9,7 @@ export async function POST(req: Request) {
     }
 
     // Forward to the new external API
-    const response = await fetch("http://37.27.113.235:8231/parse_rtw_work_document/", {
+    const response = await fetch("http://37.27.113.235:8233/parse_rtw_work_document/", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",

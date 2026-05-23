@@ -12,7 +12,7 @@ export async function POST(req: Request) {
       );
     }
 
-    const response = await fetch("http://37.27.113.235:8231/parse_bank_statement/", {
+    const response = await fetch("http://37.27.113.235:8233/parse_bank_statement/", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
