@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 
+const BANK_RTW_BASE_URL = process.env.BANK_RTW_BASE_URL;
+
 export async function POST(req: Request) {
   try {
     const { file_url } = await req.json();
@@ -8,14 +10,24 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Missing file_url" }, { status: 400 });
     }
 
+    if (!BANK_RTW_BASE_URL) {
+      return NextResponse.json(
+        { error: "Missing BANK_RTW_BASE_URL env var" },
+        { status: 500 }
+      );
+    }
+
     // Forward to the new external API
-    const response = await fetch("http://37.27.113.235:8233/parse_rtw_work_document/", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ file_url }),
-    });
+    const response = await fetch(
+      `${BANK_RTW_BASE_URL.replace(/\/$/, "")}/parse_rtw_work_document/`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ file_url }),
+      }
+    );
 
     if (!response.ok) {
       const errorText = await response.text();

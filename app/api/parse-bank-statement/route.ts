@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 
+const BANK_RTW_BASE_URL = process.env.BANK_RTW_BASE_URL;
+
 export async function POST(req: Request) {
   try {
     const body = await req.json();
@@ -12,15 +14,25 @@ export async function POST(req: Request) {
       );
     }
 
-    const response = await fetch("http://37.27.113.235:8233/parse_bank_statement/", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        file_url,
-        employee_name: employee_name ?? [],
-        bank_name: bank_name ?? "Other bank",
-      })
-    });
+    if (!BANK_RTW_BASE_URL) {
+      return NextResponse.json(
+        { error: "Missing BANK_RTW_BASE_URL env var" },
+        { status: 500 }
+      );
+    }
+
+    const response = await fetch(
+      `${BANK_RTW_BASE_URL.replace(/\/$/, "")}/parse_bank_statement/`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          file_url,
+          employee_name: employee_name ?? [],
+          bank_name: bank_name ?? "Other bank",
+        }),
+      }
+    );
 
     if (!response.ok) {
       const errorText = await response.text();
